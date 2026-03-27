@@ -6,31 +6,28 @@
     <title>Jiji Jumper</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
         
-        /* Fixed Menu Layering */
+        /* THE MENU - Forced to the very front */
         #overlay { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: radial-gradient(circle, #111 0%, #000 100%); 
-            color: white; 
-            z-index: 100; /* Keeps menu on top of game */
+            background: #0a0a0a; color: white; z-index: 9999; 
         }
         
-        h1 { font-size: 60px; color: #00ffff; text-shadow: 0 0 20px #00ffff; margin-bottom: 30px; }
+        h1 { font-size: 50px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin-bottom: 20px; }
         
         .btn { 
-            padding: 15px 40px; margin: 10px; font-size: 20px; cursor: pointer;
-            background: rgba(0,255,255,0.1); border: 2px solid #00ffff; color: white;
-            transition: 0.3s; width: 280px; text-align: center; border-radius: 8px;
-            z-index: 101;
+            padding: 15px 30px; margin: 10px; font-size: 22px; cursor: pointer;
+            background: #111; border: 3px solid #00ffff; color: white;
+            width: 280px; text-align: center; border-radius: 12px;
+            display: block; position: relative; z-index: 10000;
         }
-        .btn:hover { background: #00ffff; color: black; box-shadow: 0 0 20px #00ffff; }
+        .btn:hover { background: #00ffff; color: #000; }
         
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
         #ui { 
             position: absolute; top: 20px; width: 100%; text-align: center; 
-            color: #00ffff; font-size: 24px; font-weight: bold; pointer-events: none; 
-            display: none; z-index: 50;
+            color: #00ffff; font-size: 24px; font-weight: bold; z-index: 10; display: none;
         }
     </style>
 </head>
@@ -40,9 +37,9 @@
 
 <div id="overlay">
     <h1>JIJI JUMPER</h1>
-    <div class="btn" onclick="startGame(1)">LEVEL 1: STEREO</div>
-    <div class="btn" onclick="startGame(2)">LEVEL 2: ON TRACK</div>
-    <div class="btn" onclick="startGame(3)" style="border-color: #ff0066; color: #ff0066;">LEVEL 3: IMPOSSIBLE</div>
+    <button class="btn" onclick="startGame(1)">LEVEL 1: STEREO</button>
+    <button class="btn" onclick="startGame(2)">LEVEL 2: ON TRACK</button>
+    <button class="btn" onclick="startGame(3)" style="border-color:#ff0066; color:#ff0066;">LEVEL 3: IMPOSSIBLE</button>
 </div>
 
 <canvas id="game"></canvas>
@@ -71,56 +68,36 @@ playerImg.src = 'Jiji-jumper.jpeg';
 
 let player = { x: 150, y: GROUND_Y - 42, size: 42, velY: 0, rotation: 0, onGround: false };
 
-// --- FULL HAND-CRAFTED LEVELS ---
 const levels = {
-    1: [
-        {x: 800}, {x: 1200}, {x: 1500}, {x: 1545}, {x: 1900, type:'portal'}, 
-        {x: 2300}, {x: 2500}, {x: 2700}, {x: 2900}, {x: 3200, type:'portal'},
-        {x: 3600}, {x: 3645}, {x: 4100}, {x: 5000}, {x: 6000, type:'win'}
-    ],
-    2: [
-        {x: 600}, {x: 750}, {x: 900}, {x: 1200, type:'portal'},
-        {x: 1600}, {x: 1800}, {x: 1845}, {x: 2100}, {x: 2400},
-        {x: 2700, type:'portal'}, {x: 3000}, {x: 3045}, {x: 3090},
-        {x: 3500}, {x: 4000, type:'win'}
-    ],
-    3: [
-        {x: 500}, {x: 545}, {x: 700}, {x: 745}, {x: 900}, {x: 1100, type:'portal'},
-        {x: 1400}, {x: 1445}, {x: 1490}, {x: 1800}, {x: 2000, type:'portal'},
-        {x: 2300}, {x: 2345}, {x: 2600}, {x: 2645}, {x: 2900}, {x: 2945},
-        {x: 3200, type:'portal'}, {x: 3500}, {x: 3545}, {x: 3590}, {x: 3635},
-        {x: 4000}, {x: 4200}, {x: 4400}, {x: 4600, type:'portal'},
-        {x: 5000}, {x: 5100}, {x: 5200}, {x: 5300}, {x: 5400}, {x: 8000, type:'win'}
-    ]
+    1: [{x: 800}, {x: 1200}, {x: 1500}, {x: 1900, type:'portal'}, {x: 2500}, {x: 3500, type:'win'}],
+    2: [{x: 600}, {x: 850}, {x: 1100, type:'portal'}, {x: 1600}, {x: 2500, type:'win'}],
+    3: [{x: 500}, {x: 550}, {x: 600}, {x: 900, type:'portal'}, {x: 1200}, {x: 1250}, {x: 1500, type:'portal'}, {x: 4000, type:'win'}]
 };
 
 function startGame(num) {
-    gameState = "PLAY";
+    console.log("Starting Level " + num);
     overlay.style.display = "none";
     ui.style.display = "block";
+    
+    gameState = "PLAY";
     progress = 0;
     mode = "cube";
     player.y = GROUND_Y - 42;
     player.velY = 0;
     player.rotation = 0;
-    particles = [];
-    
-    // Set Difficulty
+
     if(num === 1) speed = 9;
     if(num === 2) speed = 12;
-    if(num === 3) speed = 15; 
+    if(num === 3) speed = 16; 
     
-    currentLevel = levels[num].map(obj => ({
-        x: obj.x,
-        type: obj.type || 'spike'
-    }));
+    currentLevel = levels[num].map(obj => ({ x: obj.x, type: obj.type || 'spike' }));
 }
 
 function update() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawWorld();
-
+    
     if (gameState === "PLAY") {
+        drawWorld();
         handlePhysics();
         currentLevel.forEach(obj => {
             obj.x -= speed;
@@ -133,17 +110,16 @@ function update() {
                     mode = (mode === "cube") ? "ship" : "cube";
                     obj.x = -5000; 
                 }
-            } else if (obj.type === 'win') {
-                if (obj.x < player.x) win();
+            } else if (obj.type === 'win' && obj.x < player.x) {
+                win();
             }
         });
         progress += 0.05; 
         ui.innerText = `${Math.min(100, Math.floor(progress))}%`;
+        updateParticles();
+        drawParticles();
+        drawPlayer();
     }
-
-    updateParticles();
-    drawParticles();
-    drawPlayer();
     requestAnimationFrame(update);
 }
 
@@ -173,30 +149,23 @@ function drawPlayer() {
     ctx.translate(player.x + player.size/2, player.y + player.size/2);
     ctx.rotate(player.rotation * Math.PI / 180);
     ctx.shadowBlur = 15; ctx.shadowColor = "#00ffff";
-    if (playerImg.complete) {
-        ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
-    } else {
-        ctx.fillStyle = "cyan"; ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
-    }
+    if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
     ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
     ctx.restore();
 }
 
 function drawSpike(x) {
-    if (x < -100 || x > canvas.width + 100) return;
     ctx.fillStyle = "#ff0066";
     ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x+22, GROUND_Y-45); ctx.lineTo(x+44, GROUND_Y); ctx.fill();
 }
 
 function drawPortal(x) {
-    ctx.fillStyle = mode === "cube" ? "#00ff00" : "#ff00ff";
-    ctx.shadowBlur = 20; ctx.shadowColor = ctx.fillStyle;
+    ctx.fillStyle = "#00ff00";
     ctx.fillRect(x, GROUND_Y - 250, 40, 250);
-    ctx.shadowBlur = 0;
 }
 
 function drawWorld() {
-    ctx.strokeStyle = "#1a1a1a";
+    ctx.strokeStyle = "#222";
     let gridOffset = (progress * 25) % 60;
     for(let i = -gridOffset; i < canvas.width; i+=60) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
@@ -226,7 +195,7 @@ function die() {
 
 function win() {
     gameState = "MENU";
-    alert("LEVEL COMPLETE!");
+    alert("YOU WIN!");
     overlay.style.display = "flex";
 }
 
@@ -241,9 +210,8 @@ function updateParticles() {
 }
 function drawParticles() { particles.forEach(p => { ctx.globalAlpha=p.life; ctx.fillStyle="cyan"; ctx.fillRect(p.x,p.y,p.size,p.size); }); ctx.globalAlpha=1; }
 
-// --- CONTROLS ---
-window.addEventListener("keydown", (e) => { if(e.code === "Space" || e.code === "ArrowUp") { isHolding = true; jump(); } });
-window.addEventListener("keyup", (e) => { if(e.code === "Space" || e.code === "ArrowUp") isHolding = false; });
+window.addEventListener("keydown", (e) => { if(e.code === "Space") { isHolding = true; jump(); } });
+window.addEventListener("keyup", (e) => { if(e.code === "Space") isHolding = false; });
 window.addEventListener("mousedown", () => { isHolding = true; jump(); });
 window.addEventListener("mouseup", () => isHolding = false);
 
