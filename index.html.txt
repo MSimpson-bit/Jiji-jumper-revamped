@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jiji Jumper: Official</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #060606; font-family: 'Segoe UI', Arial, sans-serif; }
+        canvas { display: block; }
+        #ui { 
+            position: absolute; top: 20px; width: 100%; text-align: center; 
+            color: #00ffff; font-size: 28px; font-weight: bold; 
+            text-shadow: 0 0 12px rgba(0,255,255,0.7);
+            pointer-events: none;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+<div id="ui">JIJI JUMPER - 0%</div>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const ui = document.getElementById("ui");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// --- GAME CONFIGURATION ---
+const GROUND_Y = canvas.height / 2 + 100;
+let gameOver = false;
+let speed = 9;
+let gravity = 0.9;
+let isHolding = false;
+let progress = 0;
+
+// --- LOAD PLAYER IMAGE ---
+const playerImg = new Image();
+// This matches your .jpeg file extension exactly
+playerImg.src = 'Jiji-jumper.jpeg'; 
+
+// --- GAME OBJECTS ---
+let player = {
+    x: 150, 
+    y: GROUND_Y - 42, 
+    size: 42,
+    velocityY: 0, 
+    rotation: 0, 
+    onGround: false
+};
+
+// Level Layout (X positions for spikes)
+let spikes = [{x: 800}, {x: 1300}, {x: 1345}, {x: 1900}, {x: 2500}, {x: 2545}, {x: 2590}];
+let particles = [];
+
+// --- PARTICLE SYSTEM (Death Effect) ---
+function createExplosion(x, y) {
+    for (let i = 0; i < 20; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 16,
+            vy: (Math.random() - 0.5) * 16,
+            size: Math.random() * 8 + 4,
+            life: 1.0,
+            color: Math.random() > 0.5 ? "#00ffff" : "#ffffff"
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.02;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+
+function drawParticles() {
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+    });
+    ctx.globalAlpha = 1.0;
+}
+
+// --- MAIN GAME LOOP ---
+function update() {
+    if (gameOver) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawWorld();
+        updateParticles();
+        drawParticles();
+        requestAnimationFrame(update);
+        return;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Physics Logic
+    player.velocityY += gravity;
+    player.y += player.velocityY;
+
+    // Ground Collision & Buffer Jump
+    if (player.y > GROUND_Y - player.size) {
+        player.y = GROUND_Y - player.size;
+        player.velocityY = 0;
+        player.onGround = true;
+        
+        // The "Hold to Jump" Mechanic
+        if (isHolding) jump();
+        
+        // Snap to flat 90-degree landing
+        player.rotation = Math.round(player.rotation / 90) * 90;
+    } else {
+        player.onGround = false;
+        player.rotation += 6; // Spin speed in air
+    }
+
+    // World Progress
+    progress += 0.06;
+    ui.innerText = `JIJI JUMPER - ${Math.min(100, Math.floor(progress))}%`;
+
+    drawWorld();
+    
+    // Spike Logic & Collision
+    spikes.forEach(s => {
+        s.x -= speed;
+        
+        // Draw Spike (Magenta/Red Glow)
+        ctx.fillStyle = "#ff0066";
+        ctx.shadowBlur = 15; ctx.shadowColor = "#ff0066";
+        ctx.beginPath();
+        ctx.moveTo(s.x, GROUND_Y);
+        ctx.lineTo(s.x + 22, GROUND_Y - 45);
+        ctx.lineTo(s.x + 44, GROUND_Y);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // "Fair" Hitbox Detection
+        const hitMargin = 8;
+        if (player.x + player.size - hitMargin > s.x + hitMargin && 
+            player.x + hitMargin < s.x + 44 - hitMargin && 
+            player.y + player.size - hitMargin > GROUND_Y - 40) {
+            die();
+        }
+
+        // Loop spikes infinitely
+        if (s.x < -100) s.x = canvas.width + Math.random() * 600 + 200;
+    });
+
+    drawPlayer();
+    requestAnimationFrame(update);
+}
+
+function drawPlayer() {
+    ctx.save();
+    ctx.translate(player.x + player.size/2, player.y + player.size/2);
+    ctx.rotate(player.rotation * Math.PI / 180);
+    
+    // Cyan Glow
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "#00ffff";
+    
+    // Draw Jiji-jumper.jpeg
+    if (playerImg.complete && playerImg.naturalWidth !== 0) {
+        ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
+    } else {
+        // Fallback: Blue square if image fails to load
+        ctx.fillStyle = "#00ffff";
+        ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
+    }
+    
+    // Border for the cube
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.restore();
+}
+
+function drawWorld() {
+    // Moving Grid Lines
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1;
+    let gridOffset = (progress * 15) % 60;
+    for(let i = -gridOffset; i < canvas.width; i += 60) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+    }
+
+    // Ground Styling
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
+    
+    // Glowing Ground Line
+    ctx.strokeStyle = "#00ffff";
+    ctx.lineWidth = 4;
+    ctx.shadowBlur = 10; ctx.shadowColor = "#00ffff";
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y);
+    ctx.lineTo(canvas.width, GROUND_Y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+}
+
+function jump() {
+    if (player.onGround) {
+        player.velocityY = -15.5; // Snap jump
+        player.onGround = false;
+    }
+}
+
+function die() {
+    if (gameOver) return;
+    gameOver = true;
+    createExplosion(player.x + player.size/2, player.y + player.size/2);
+    // Auto-restart after 1.5 seconds
+    setTimeout(() => {
+        location.reload();
+    }, 1500);
+}
+
+// --- INPUT HANDLERS ---
+// Space, Up Arrow, or Left Click
+window.addEventListener("keydown", (e) => { 
+    if(e.code === "Space" || e.code === "ArrowUp") { 
+        isHolding = true; 
+        jump(); 
+    } 
+});
+window.addEventListener("keyup", (e) => { 
+    if(e.code === "Space" || e.code === "ArrowUp") isHolding = false; 
+});
+window.addEventListener("mousedown", () => { isHolding = true; jump(); });
+window.addEventListener("mouseup", () => isHolding = false);
+
+// Initial start
+update();
+</script>
+</body>
+</html>
