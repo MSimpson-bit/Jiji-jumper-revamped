@@ -6,20 +6,32 @@
     <title>Jiji Jumper</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        
+        /* THE MENU - Using 'fixed' and the highest Z-index possible */
         #overlay { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            position: fixed; 
+            top: 0; left: 0; 
+            width: 100vw; height: 100vh; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: #0a0a0a; color: white; z-index: 9999; 
+            background: #0a0a0a; 
+            z-index: 9999; 
         }
-        h1 { font-size: 50px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin-bottom: 20px; }
+        
+        h1 { font-size: 50px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin-bottom: 30px; }
+        
+        /* Real Button elements are much more reliable on Chromebooks */
         .btn { 
             padding: 15px 30px; margin: 10px; font-size: 22px; cursor: pointer;
             background: #111; border: 3px solid #00ffff; color: white;
-            width: 300px; text-align: center; border-radius: 12px;
-            display: block; position: relative; z-index: 10000;
+            width: 320px; text-align: center; border-radius: 12px;
+            transition: 0.2s;
+            pointer-events: auto !important; /* Forces the mouse to see the button */
         }
-        .btn:hover { background: #00ffff; color: #000; }
+        .btn:hover { background: #00ffff; color: #000; transform: scale(1.05); }
+        .btn:active { background: #fff; }
+
         canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        
         #ui { 
             position: absolute; top: 20px; width: 100%; text-align: center; 
             color: #00ffff; font-size: 32px; font-weight: bold; z-index: 10; display: none;
@@ -32,8 +44,8 @@
 
 <div id="overlay">
     <h1>JIJI JUMPER</h1>
-    <button class="btn" onclick="startGame(1)">LEVEL 1: BLOCKS</button>
-    <button class="btn" onclick="startGame(2)">LEVEL 2: CLIMBER</button>
+    <button class="btn" onclick="startGame(1)">LEVEL 1: STEREO</button>
+    <button class="btn" onclick="startGame(2)">LEVEL 2: ON TRACK</button>
     <button class="btn" onclick="startGame(3)" style="border-color:#ff0066; color:#ff0066;">LEVEL 3: IMPOSSIBLE</button>
 </div>
 
@@ -51,50 +63,44 @@ canvas.height = window.innerHeight;
 const GROUND_Y = canvas.height / 2 + 100;
 let gameState = "MENU"; 
 let speed, gravity = 0.9, isHolding = false, mode = "cube"; 
-let currentLevel = [], particles = [], distanceTraveled = 0, levelLength = 0;
+let currentLevel = [], distanceTraveled = 0, levelLength = 0;
 
 const playerImg = new Image();
 playerImg.src = 'Jiji-jumper.jpeg'; 
 
 let player = { x: 150, y: GROUND_Y - 42, size: 42, velY: 0, rotation: 0, onGround: false };
 
-// --- LEVEL DATA WITH BLOCKS ---
-// t: 's' (spike), 'p' (portal), 'b' (block)
-// h: height offset from ground (for blocks)
 const levelData = {
-    1: { length: 12000, speed: 9, obstacles: [
-        {x: 800, t:'s'}, {x: 1200, t:'b', h: 45}, {x: 1245, t:'b', h: 45}, // A small platform
-        {x: 1800, t:'p'}, {x: 2400, t:'b', h: 100}, {x: 2445, t:'b', h: 100},
-        {x: 3500, t:'s'}, {x: 3545, t:'s'}, {x: 4000, t:'b', h: 60}, {x: 4200, t:'s'},
-        {x: 5500, t:'p'}, {x: 6500, t:'b', h: 120}, {x: 8000, t:'s'}
-    ]},
-    2: { length: 18000, speed: 12, obstacles: [
-        {x: 600, t:'b', h: 45}, {x: 800, t:'b', h: 90}, {x: 1000, t:'b', h: 135}, // Stairs
-        {x: 1500, t:'p'}, {x: 2000, t:'s'}, {x: 2500, t:'b', h: 100},
-        {x: 3500, t:'p'}, {x: 4500, t:'b', h: 50}, {x: 4545, t:'s'}
-    ]},
-    3: { length: 30000, speed: 17, obstacles: [
-        {x: 500, t:'s'}, {x: 800, t:'b', h: 50}, {x: 1000, t:'s'}, {x: 1200, t:'p'}
-    ]}
+    1: { length: 12000, speed: 9, obstacles: [{x:800,t:'s'},{x:1200,t:'b',h:45},{x:1800,t:'p'},{x:2400,t:'b',h:100}] },
+    2: { length: 18000, speed: 12, obstacles: [{x:600,t:'b',h:45},{x:800,t:'b',h:90},{x:1500,t:'p'}] },
+    3: { length: 30000, speed: 17, obstacles: [{x:500,t:'s'},{x:1200,t:'p'}] }
 };
 
 function startGame(num) {
-    gameState = "PLAY";
-    overlay.style.display = "none";
+    console.log("Button clicked! Starting level:", num);
+    overlay.style.setProperty('display', 'none', 'important');
     ui.style.display = "block";
+    
+    gameState = "PLAY";
     distanceTraveled = 0;
     mode = "cube";
     player.y = GROUND_Y - 42;
     player.velY = 0;
-    particles = [];
+
     const data = levelData[num];
     speed = data.speed;
     levelLength = data.length;
-    currentLevel = data.obstacles.map(o => ({ x: o.x, y: GROUND_Y - (o.h || 0), type: o.t === 'p' ? 'portal' : (o.t === 'b' ? 'block' : 'spike'), active: true }));
+    currentLevel = data.obstacles.map(o => ({ 
+        x: o.x, 
+        y: GROUND_Y - (o.h || 0), 
+        type: o.t === 'p' ? 'portal' : (o.t === 'b' ? 'block' : 'spike'), 
+        active: true 
+    }));
 }
 
 function update() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
     if (gameState === "PLAY") {
         drawWorld();
         handlePhysics();
@@ -121,7 +127,7 @@ function update() {
                 }
             }
         });
-        updateParticles(); drawParticles(); drawPlayer();
+        drawPlayer();
     }
     requestAnimationFrame(update);
 }
@@ -140,13 +146,87 @@ function handlePhysics() {
             player.onGround = false;
             player.rotation += 6;
         }
-    } else { // SHIP
+    } else {
         player.velY += isHolding ? -0.8 : 0.8;
         player.y += player.velY;
         player.rotation = player.velY * 2;
         if (player.y > GROUND_Y - player.size || player.y < 0) die();
     }
 }
+
+function checkBlockCollision(bx, by) {
+    const p = player;
+    if (p.x + p.size > bx && p.x < bx + 45) {
+        if (p.velY >= 0 && p.y + p.size >= by && p.y + p.size <= by + 20) {
+            p.y = by - p.size; p.velY = 0; p.onGround = true;
+            if (isHolding) jump();
+            p.rotation = Math.round(p.rotation / 90) * 90;
+        } else if (p.y + p.size > by + 5 && p.y < by + 40) {
+            if (p.x + p.size > bx && p.x < bx + 10) die();
+        }
+    }
+}
+
+function drawPlayer() {
+    ctx.save();
+    ctx.translate(player.x + player.size/2, player.y + player.size/2);
+    ctx.rotate(player.rotation * Math.PI / 180);
+    if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
+    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.restore();
+}
+
+function drawBlock(x, y) {
+    ctx.fillStyle = "#333"; ctx.fillRect(x, y, 45, 45);
+    ctx.strokeStyle = "#00ffff"; ctx.strokeRect(x, y, 45, 45);
+}
+
+function drawSpike(x) {
+    ctx.fillStyle = "#ff0066";
+    ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x+22, GROUND_Y-45); ctx.lineTo(x+44, GROUND_Y); ctx.fill();
+}
+
+function drawPortal(x) {
+    ctx.fillStyle = "#00ff00"; ctx.fillRect(x, GROUND_Y - 250, 40, 250);
+}
+
+function drawWorld() {
+    ctx.strokeStyle = "#222";
+    for(let i = -(distanceTraveled % 60); i < canvas.width; i+=60) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+    }
+    ctx.fillStyle = "#050505"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
+    ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
+}
+
+function checkCollision(ox, ow, oh, oy) {
+    const m = 14;
+    return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > oy - oh);
+}
+
+function jump() { if (player.onGround) { player.velY = -15.5; player.onGround = false; } }
+function die() { 
+    gameState = "DEAD"; 
+    setTimeout(() => { 
+        overlay.style.display = "flex"; 
+        ui.style.display = "none"; 
+        gameState = "MENU";
+    }, 800); 
+}
+function win() { gameState = "WIN"; alert("100%!"); location.reload(); }
+
+window.addEventListener("keydown", (e) => { if(e.code === "Space") isHolding = true; });
+window.addEventListener("keyup", (e) => { if(e.code === "Space") isHolding = false; });
+window.addEventListener("mousedown", (e) => { 
+    if (gameState === "PLAY") isHolding = true; 
+});
+window.addEventListener("mouseup", () => isHolding = false);
+
+update();
+</script>
+</body>
+</html>
 
 function checkBlockCollision(bx, by) {
     const p = player;
