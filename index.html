@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jiji Jumper</title>
+    <title>Jiji Jumper Pro</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: #00ffff; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: #fff; }
         #menu { 
             position: absolute; width: 100%; height: 100%; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: radial-gradient(circle, #111 0%, #000 100%); z-index: 100; 
+            background: #0a0a0a; z-index: 100; 
         }
-        h1 { font-size: 60px; text-shadow: 0 0 20px #00ffff; margin-bottom: 10px; }
-        .key-hint { font-size: 24px; color: white; margin: 10px; padding: 10px; border: 1px solid #333; width: 320px; border-radius: 8px; text-align: center; }
+        h1 { font-size: 60px; text-shadow: 0 0 20px #00ffff; margin: 0; }
+        .key-hint { font-size: 22px; margin: 10px; padding: 15px; border: 2px solid #333; width: 350px; border-radius: 12px; text-align: center; background: rgba(255,255,255,0.05); }
         canvas { display: none; position: absolute; top: 0; left: 0; }
-        #ui { position: absolute; top: 20px; width: 100%; text-align: center; color: #00ffff; font-size: 32px; font-weight: bold; z-index: 10; display: none; }
+        #ui { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 32px; font-weight: bold; z-index: 10; display: none; text-shadow: 2px 2px 5px #000; }
     </style>
 </head>
 <body>
@@ -23,9 +23,10 @@
 
 <div id="menu">
     <h1>JIJI JUMPER</h1>
-    <div class="key-hint">Press <b style="color:#00ffff"></b> - STEREO MADNESS</div>
-    <div class="key-hint">Press <b style="color:#00ffff"></b> - BACK ON TRACK</div>
-    <div class="key-hint">Press <b style="color:#ff0066"></b> - POLARGEIST</div>
+    <p style="color: #00ffff; letter-spacing: 2px;">BUFFER CLICKS ENABLED</p>
+    <div class="key-hint">Press <b style="color:#42a5f5"></b> - STEREO (Blue)</div>
+    <div class="key-hint">Press <b style="color:#66bb6a"></b> - TRACK (Green)</div>
+    <div class="key-hint">Press <b style="color:#ef5350"></b> - IMPOSSIBLE (Red)</div>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -40,42 +41,29 @@ canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const GROUND_Y = canvas.height / 2 + 150;
-const CEILING_Y = GROUND_Y - 400; // The "Roof" for spikes
-let isPlaying = false;
+const CEILING_Y = GROUND_Y - 450;
+let isPlaying = false, bgColor = "#000";
 let speed, levelLength, distanceTraveled = 0;
-let gravity = 0.9, isHolding = false, mode = "cube";
+let gravity = 0.95, isHolding = false, mode = "cube";
 let currentLevel = [];
 
 const playerImg = new Image();
 playerImg.src = 'Jiji-jumper.jpeg'; 
-let player = { x: 200, y: GROUND_Y - 50, size: 46, velY: 0, rotation: 0, onGround: false };
+let player = { x: 250, y: GROUND_Y - 50, size: 48, velY: 0, rotation: 0, onGround: false };
 
-// --- LEVEL DESIGNER ---
-// t: 's' (spike), 'rs' (roof spike), 'b' (block), 'p' (portal)
+// --- LEVEL DATA (t: s=spike, rs=roof spike, b=block, p=portal, o=orb) ---
 const levelData = {
-    1: { length: 18000, speed: 9, obs: [
-        {x: 800, t:'s'}, {x: 1200, t:'b', h:50}, {x: 1250, t:'b', h:50}, {x: 1800, t:'s'}, {x: 1850, t:'s'},
-        {x: 2500, t:'p'}, {x: 3000, t:'rs'}, {x: 3300, t:'rs'}, {x: 3600, t:'rs'}, // Ship section with roof spikes
-        {x: 4500, t:'p'}, {x: 5200, t:'b', h:50}, {x: 5250, t:'b', h:100}, {x: 5300, t:'b', h:150},
-        {x: 6500, t:'s'}, {x: 7500, t:'b', h:50}, {x: 7550, t:'s', h:50}, // Spike on a block!
-        {x: 8500, t:'p'}, {x: 9500, t:'rs'}, {x: 10500, t:'rs'}, {x: 11500, t:'s'},
-        {x: 13000, t:'b', h:80}, {x: 14000, t:'s'}, {x: 15500, t:'s'}, {x: 16500, t:'s'}
+    1: { color: "#001a33", length: 20000, speed: 9, obs: [
+        {x: 1000, t:'s'}, {x: 1500, t:'o', h:100}, {x: 2200, t:'b', h:50}, {x: 2800, t:'p'},
+        {x: 3500, t:'rs'}, {x: 4500, t:'p'}, {x: 5500, t:'o', h:80}, {x: 6000, t:'s'},
+        {x: 7500, t:'b', h:100}, {x: 7550, t:'o', h:200}, {x: 9000, t:'s'}
     ]},
-    2: { length: 25000, speed: 13, obs: [
-        {x: 600, t:'s'}, {x: 1200, t:'b', h:60}, {x: 1800, t:'p'}, {x: 2200, t:'rs'},
-        {x: 3000, t:'b', h:120}, {x: 3050, t:'b', h:120}, {x: 4500, t:'s'}, {x: 5500, t:'p'},
-        {x: 6500, t:'b', h:50}, {x: 7000, t:'b', h:100}, {x: 7500, t:'b', h:150},
-        {x: 9000, t:'s'}, {x: 10000, t:'s'}, {x: 11000, t:'p'}, {x: 12000, t:'rs'},
-        {x: 14000, t:'b', h:50}, {x: 14050, t:'s', h:50}, {x: 16000, t:'s'},
-        {x: 18000, t:'b', h:100}, {x: 19000, t:'s'}, {x: 21000, t:'s'}, {x: 23000, t:'s'}
+    2: { color: "#0b2b0b", length: 30000, speed: 13, obs: [
+        {x: 800, t:'o', h:120}, {x: 1400, t:'b', h:60}, {x: 2000, t:'p'}, {x: 3000, t:'o', h:150},
+        {x: 4500, t:'s'}, {x: 6000, t:'p'}, {x: 8000, t:'b', h:80}, {x: 8050, t:'o', h:180}
     ]},
-    3: { length: 45000, speed: 19, obs: [
-        {x: 500, t:'s'}, {x: 560, t:'s'}, {x: 620, t:'s'}, // Triple spike
-        {x: 1200, t:'p'}, {x: 1500, t:'rs'}, {x: 1700, t:'rs'}, {x: 1900, t:'rs'},
-        {x: 2500, t:'b', h:200}, {x: 3500, t:'s'}, {x: 4500, t:'p'},
-        {x: 6000, t:'b', h:50}, {x: 6050, t:'b', h:100}, {x: 6100, t:'b', h:150}, {x: 6150, t:'s', h:150},
-        {x: 8000, t:'s'}, {x: 10000, t:'p'}, {x: 15000, t:'s'}, {x: 20000, t:'s'},
-        {x: 25000, t:'b', h:100}, {x: 30000, t:'s'}, {x: 35000, t:'s'}, {x: 42000, t:'s'}
+    3: { color: "#2b0b0b", length: 55000, speed: 19, obs: [
+        {x: 600, t:'s'}, {x: 1000, t:'o', h:100}, {x: 1100, t:'s'}, {x: 2000, t:'p'}
     ]}
 };
 
@@ -83,80 +71,94 @@ function startLevel(num) {
     const data = levelData[num];
     speed = data.speed;
     levelLength = data.length;
-    currentLevel = data.obs.map(o => ({ 
-        x: o.x, y: GROUND_Y - (o.h || 0), 
-        type: o.t, active: true 
-    }));
+    bgColor = data.color;
+    currentLevel = data.obs.map(o => ({ x: o.x, y: GROUND_Y - (o.h || 0), type: o.t, active: true }));
     menu.style.display = "none"; canvas.style.display = "block"; ui.style.display = "block";
     isPlaying = true; update();
 }
 
-window.addEventListener("keydown", (e) => {
-    if (!isPlaying) {
-        if (e.key === "1") startLevel(1);
-        if (e.key === "2") startLevel(2);
-        if (e.key === "3") startLevel(3);
-    } else if (e.code === "Space" || e.code === "ArrowUp") {
-        isHolding = true;
-        if (player.onGround && mode === "cube") { player.velY = -16; player.onGround = false; }
+// --- BETTER PHYSICS: BUFFER CLICKING ---
+function handleInput(down) {
+    isHolding = down;
+    if (down && isPlaying) {
+        if (player.onGround && mode === "cube") {
+            player.velY = -17;
+            player.onGround = false;
+        }
+        // Check for Orb interaction (must be near orb to jump mid-air)
+        currentLevel.forEach(obj => {
+            if (obj.type === 'o' && obj.active) {
+                let sx = obj.x - distanceTraveled + player.x;
+                let dx = player.x - sx;
+                let dy = player.y - obj.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < 100) {
+                    player.velY = -17; // Orb Jump
+                    obj.active = false; // "Consume" orb
+                }
+            }
+        });
     }
+}
+
+window.addEventListener("keydown", (e) => {
+    if (!isPlaying) { if (e.key === "1") startLevel(1); if (e.key === "2") startLevel(2); if (e.key === "3") startLevel(3); }
+    else if (e.code === "Space") handleInput(true);
 });
-window.addEventListener("keyup", (e) => { if (e.code === "Space" || e.code === "ArrowUp") isHolding = false; });
-window.addEventListener("mousedown", () => { isHolding = true; if (!isPlaying) startLevel(1); else if (player.onGround && mode === "cube") { player.velY = -16; player.onGround = false; } });
-window.addEventListener("mouseup", () => isHolding = false);
+window.addEventListener("keyup", (e) => { if (e.code === "Space") handleInput(false); });
+window.addEventListener("mousedown", () => handleInput(true));
+window.addEventListener("mouseup", () => handleInput(false));
 
 function update() {
     if (!isPlaying) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
     distanceTraveled += speed;
     ui.innerText = Math.min(100, Math.floor((distanceTraveled / levelLength) * 100)) + "%";
+
+    // Buffer Logic: If holding Space, try to jump every frame you are on ground
+    if (isHolding && player.onGround && mode === "cube") { player.velY = -17; player.onGround = false; }
 
     if (mode === "cube") {
         player.velY += gravity; player.y += player.velY;
         if (player.y > GROUND_Y - player.size) { player.y = GROUND_Y - player.size; player.velY = 0; player.onGround = true; player.rotation = Math.round(player.rotation / 90) * 90; }
-        else { player.onGround = false; player.rotation += 6; }
+        else { player.onGround = false; player.rotation += 7; }
     } else {
-        player.velY += isHolding ? -0.8 : 0.8; player.y += player.velY;
-        player.rotation = player.velY * 2;
+        player.velY += isHolding ? -0.85 : 0.85; player.y += player.velY;
+        player.rotation = player.velY * 2.5;
         if (player.y > GROUND_Y - player.size || player.y < CEILING_Y) die();
     }
 
     if (distanceTraveled >= levelLength) win();
 
-    // Draw Floor & Ceiling
-    ctx.fillStyle = "#050505"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
-    ctx.fillRect(0, 0, canvas.width, CEILING_Y);
-    ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 3;
-    ctx.strokeRect(0, GROUND_Y, canvas.width, 2);
-    ctx.strokeRect(0, CEILING_Y, canvas.width, 2);
+    // Draw Map Items
+    ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    for(let i=0; i<canvas.width; i+=80) ctx.strokeRect(i - (distanceTraveled%80), 0, 80, canvas.height);
 
     currentLevel.forEach(obj => {
         let sx = obj.x - distanceTraveled + player.x;
         if (sx < -100 || sx > canvas.width + 100) return;
 
         if (obj.type === 's') { // Spike
-            ctx.fillStyle = "#ff0066";
-            ctx.beginPath(); ctx.moveTo(sx, obj.y); ctx.lineTo(sx+25, obj.y-50); ctx.lineTo(sx+50, obj.y); ctx.fill();
-            if (checkCollision(sx, 50, 50, obj.y)) die();
-        } else if (obj.type === 'rs') { // Roof Spike
-            ctx.fillStyle = "#ff0066";
-            ctx.beginPath(); ctx.moveTo(sx, CEILING_Y); ctx.lineTo(sx+25, CEILING_Y+50); ctx.lineTo(sx+50, CEILING_Y); ctx.fill();
-            if (player.x + player.size > sx && player.x < sx + 50 && player.y < CEILING_Y + 45) die();
+            ctx.fillStyle = "#ff3366"; ctx.beginPath(); ctx.moveTo(sx, GROUND_Y); ctx.lineTo(sx+25, GROUND_Y-50); ctx.lineTo(sx+50, GROUND_Y); ctx.fill();
+            if (checkCollision(sx, 50, 50, GROUND_Y)) die();
+        } else if (obj.type === 'o' && obj.active) { // Yellow Orb
+            ctx.fillStyle = "#ffdd00"; ctx.beginPath(); ctx.arc(sx+25, obj.y+25, 20, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
         } else if (obj.type === 'b') { // Block
-            ctx.fillStyle = "#222"; ctx.fillRect(sx, obj.y, 50, 50);
+            ctx.fillStyle = "#111"; ctx.fillRect(sx, obj.y, 50, 50);
             ctx.strokeStyle = "#00ffff"; ctx.strokeRect(sx, obj.y, 50, 50);
             checkBlockCollision(sx, obj.y);
         } else if (obj.type === 'p') { // Portal
-            ctx.fillStyle = "#00ff00"; ctx.globalAlpha = 0.6; ctx.fillRect(sx, CEILING_Y, 50, GROUND_Y - CEILING_Y); ctx.globalAlpha = 1.0;
+            ctx.fillStyle = "#00ff00"; ctx.globalAlpha = 0.3; ctx.fillRect(sx, CEILING_Y, 60, GROUND_Y - CEILING_Y); ctx.globalAlpha = 1;
             if (Math.abs(player.x - sx) < 30 && obj.active) { mode = mode === "cube" ? "ship" : "cube"; obj.active = false; }
         }
     });
 
-    // Draw Jiji
+    // Draw Player
     ctx.save(); ctx.translate(player.x + player.size/2, player.y + player.size/2); ctx.rotate(player.rotation * Math.PI / 180);
     if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
-    else { ctx.fillStyle = "cyan"; ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size); }
-    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
     ctx.restore();
 
     requestAnimationFrame(update);
@@ -164,18 +166,18 @@ function update() {
 
 function checkBlockCollision(bx, by) {
     const p = player;
-    if (p.x + p.size > bx && p.x < bx + 50) {
+    if (p.x + p.size > bx + 5 && p.x < bx + 45) {
         if (p.velY >= 0 && p.y + p.size >= by && p.y + p.size <= by + 25) { p.y = by - p.size; p.velY = 0; p.onGround = true; }
-        else if (p.y + p.size > by + 5 && p.y < by + 45) { die(); }
+        else if (p.y + p.size > by + 10 && p.y < by + 40) die();
     }
 }
 
 function checkCollision(ox, ow, oh, oy) {
-    const m = 15;
+    const m = 18;
     return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > oy - oh + m);
 }
 
-function die() { isPlaying = false; setTimeout(() => location.reload(), 400); }
+function die() { isPlaying = false; setTimeout(() => location.reload(), 300); }
 function win() { isPlaying = false; alert("100% COMPLETE!"); location.reload(); }
 
 </script>
