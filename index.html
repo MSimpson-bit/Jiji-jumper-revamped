@@ -5,220 +5,125 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jiji Jumper</title>
     <style>
-        /* 1. Basic Setup */
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; height: 100vh; width: 100vw; }
-        
-        /* 2. THE MENU - This is now the ONLY thing visible at start */
-        #menu-container { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: #0a0a0a; z-index: 999; 
-        }
-        
-        h1 { font-size: 50px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin-bottom: 30px; }
-        
-        .btn { 
-            padding: 20px; margin: 10px; font-size: 24px; cursor: pointer;
-            background: #111; border: 3px solid #00ffff; color: white;
-            width: 320px; text-align: center; border-radius: 12px;
-            transition: 0.2s; display: block;
-        }
-        .btn:hover { background: #00ffff; color: #000; box-shadow: 0 0 20px #00ffff; }
-
-        /* 3. THE GAME - Hidden by default */
-        #game-canvas { display: none; position: absolute; top: 0; left: 0; z-index: 1; }
-        
-        #ui { 
-            position: absolute; top: 20px; width: 100%; text-align: center; 
-            color: #00ffff; font-size: 32px; font-weight: bold; z-index: 10; display: none;
-        }
+        body { margin: 0; background: #000; color: #00ffff; font-family: 'Courier New', monospace; overflow: hidden; text-align: center; }
+        #menu { position: absolute; width: 100%; top: 20%; z-index: 100; }
+        h1 { font-size: 50px; text-shadow: 0 0 10px #00ffff; }
+        .instruction { font-size: 24px; margin: 20px; color: white; }
+        canvas { display: none; position: absolute; top: 0; left: 0; }
+        #ui { position: absolute; top: 10px; width: 100%; font-size: 30px; display: none; }
     </style>
 </head>
 <body>
 
-<div id="menu-container">
+<div id="ui">0%</div>
+
+<div id="menu">
     <h1>JIJI JUMPER</h1>
-    <button class="btn" onclick="playLevel(1)">LEVEL 1: STEREO</button>
-    <button class="btn" onclick="playLevel(2)">LEVEL 2: ON TRACK</button>
-    <button class="btn" onclick="playLevel(3)" style="border-color:#ff0066; color:#ff0066;">LEVEL 3: IMPOSSIBLE</button>
+    <p class="instruction">PRESS A KEY TO START:</p>
+    <p class="instruction" style="color: #00ffff;"> - LEVEL 1: STEREO</p>
+    <p class="instruction" style="color: #00ffff;"> - LEVEL 2: ON TRACK</p>
+    <p class="instruction" style="color: #ff0066;"> - LEVEL 3: IMPOSSIBLE</p>
+    <p style="margin-top: 40px; color: #555;">(Or Click/Tap anywhere to start Level 1)</p>
 </div>
 
-<div id="ui">0%</div>
-<canvas id="game-canvas"></canvas>
+<canvas id="gameCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById("game-canvas");
+const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const menu = document.getElementById("menu");
 const ui = document.getElementById("ui");
-const menu = document.getElementById("menu-container");
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const GROUND_Y = canvas.height / 2 + 100;
 let isPlaying = false;
-let speed, levelLength, distanceTraveled = 0;
-let gravity = 0.9, isHolding = false, mode = "cube";
-let currentLevel = [];
+let distance = 0, totalLength = 10000, speed = 10;
+let player = { x: 150, y: 0, size: 40, vY: 0, mode: "cube" };
+let obstacles = [];
+const GROUND = canvas.height / 2 + 100;
 
-const playerImg = new Image();
-playerImg.src = 'Jiji-jumper.jpeg'; 
-let player = { x: 150, y: GROUND_Y - 42, size: 42, velY: 0, rotation: 0, onGround: false };
-
-const levels = {
-    1: { length: 15000, speed: 9, obs: [{x:800,t:'s'},{x:1400,t:'b',h:45},{x:2200,t:'p'},{x:3500,t:'b',h:90}] },
-    2: { length: 25000, speed: 13, obs: [{x:600,t:'b',h:45},{x:1200,t:'p'},{x:1800,t:'s'},{x:2500,t:'b',h:100}] },
-    3: { length: 40000, speed: 18, obs: [{x:500,t:'s'},{x:1000,t:'p'},{x:2000,t:'s'},{x:3000,t:'b',h:50}] }
+// Level Setup
+const levelData = {
+    1: { len: 15000, spd: 9, obs: [{x:1000, t:'s'}, {x:2000, t:'b'}, {x:3000, t:'p'}] },
+    2: { len: 25000, spd: 13, obs: [{x:800, t:'b'}, {x:1500, t:'p'}, {x:2200, t:'s'}] },
+    3: { len: 45000, spd: 19, obs: [{x:500, t:'s'}, {x:900, t:'p'}, {x:1500, t:'s'}] }
 };
 
-// --- THE FIX: THIS FUNCTION TRIGGERS THE SWAP ---
-function playLevel(num) {
-    console.log("Starting Level " + num);
+function start(levelNum) {
+    const data = levelData[levelNum] || levelData;
+    speed = data.spd;
+    totalLength = data.len;
+    obstacles = data.obs;
     
-    // Hide Menu, Show Game
     menu.style.display = "none";
     canvas.style.display = "block";
     ui.style.display = "block";
     
-    // Reset Data
+    player.y = GROUND - 40;
     isPlaying = true;
-    distanceTraveled = 0;
-    mode = "cube";
-    player.y = GROUND_Y - 42;
-    player.velY = 0;
-    
-    const data = levels[num];
-    speed = data.speed;
-    levelLength = data.length;
-    currentLevel = data.obs.map(o => ({ 
-        x: o.x, y: GROUND_Y - (o.h || 0), 
-        type: o.t === 'p' ? 'portal' : (o.t === 'b' ? 'block' : 'spike'), 
-        active: true 
-    }));
+    animate();
 }
 
-function update() {
+// FAIL-SAFE INPUT: Keyboard
+window.addEventListener("keydown", (e) => {
     if (!isPlaying) {
-        requestAnimationFrame(update);
-        return;
+        if (e.key === "1") start(1);
+        if (e.key === "2") start(2);
+        if (e.key === "3") start(3);
+    } else {
+        if (e.code === "Space" || e.code === "ArrowUp") jump();
     }
+});
 
+// FAIL-SAFE INPUT: Mouse/Touch (Starts Level 1 if in Menu)
+window.addEventListener("mousedown", () => {
+    if (!isPlaying) start(1);
+    else jump();
+});
+
+function jump() {
+    if (player.mode === "cube" && player.y >= GROUND - 40) {
+        player.vY = -16;
+    }
+}
+
+function animate() {
+    if (!isPlaying) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawWorld();
-    handlePhysics();
     
-    distanceTraveled += speed;
-    ui.innerText = Math.floor((distanceTraveled / levelLength) * 100) + "%";
-
-    if (distanceTraveled >= levelLength) {
-        alert("100% COMPLETE!");
-        location.reload();
+    // Physics
+    if (player.mode === "cube") {
+        player.vY += 0.9;
+        player.y += player.vY;
+        if (player.y > GROUND - 40) { player.y = GROUND - 40; player.vY = 0; }
     }
+    
+    distance += speed;
+    ui.innerText = Math.floor((distance / totalLength) * 100) + "%";
+    
+    if (distance >= totalLength) { alert("WIN!"); location.reload(); }
 
-    currentLevel.forEach(obj => {
-        if (!obj.active) return;
-        let screenX = obj.x - distanceTraveled + player.x;
+    // Draw Ground
+    ctx.fillStyle = "#111"; ctx.fillRect(0, GROUND, canvas.width, canvas.height);
+    ctx.strokeStyle = "#00ffff"; ctx.strokeRect(0, GROUND, canvas.width, 2);
 
-        if (obj.type === 'spike') {
-            drawSpike(screenX);
-            if (checkCollision(screenX, 44, 45, obj.y)) die();
-        } else if (obj.type === 'block') {
-            drawBlock(screenX, obj.y);
-            checkBlockCollision(screenX, obj.y);
-        } else if (obj.type === 'portal') {
-            drawPortal(screenX);
-            if (Math.abs(player.x - screenX) < 30) {
-                mode = (mode === "cube") ? "ship" : "cube";
-                obj.active = false;
-            }
+    // Draw Obstacles
+    obstacles.forEach(o => {
+        let sx = o.x - distance + player.x;
+        if (o.t === 's') {
+            ctx.fillStyle = "red";
+            ctx.beginPath(); ctx.moveTo(sx, GROUND); ctx.lineTo(sx+20, GROUND-40); ctx.lineTo(sx+40, GROUND); ctx.fill();
+            if (sx < player.x + 30 && sx + 40 > player.x && player.y > GROUND - 40) location.reload();
         }
     });
 
-    drawPlayer();
-    requestAnimationFrame(update);
+    // Draw Player
+    ctx.fillStyle = "cyan";
+    ctx.fillRect(player.x, player.y, player.size, player.size);
+    
+    requestAnimationFrame(animate);
 }
-
-function handlePhysics() {
-    if (mode === "cube") {
-        player.velY += gravity;
-        player.y += player.velY;
-        if (player.y > GROUND_Y - player.size) {
-            player.y = GROUND_Y - player.size;
-            player.velY = 0;
-            player.onGround = true;
-            if (isHolding) jump();
-            player.rotation = Math.round(player.rotation / 90) * 90;
-        } else {
-            player.onGround = false;
-            player.rotation += 6;
-        }
-    } else {
-        player.velY += isHolding ? -0.8 : 0.8;
-        player.y += player.velY;
-        player.rotation = player.velY * 2;
-        if (player.y > GROUND_Y - player.size || player.y < 0) die();
-    }
-}
-
-function checkBlockCollision(bx, by) {
-    const p = player;
-    if (p.x + p.size > bx && p.x < bx + 45) {
-        if (p.velY >= 0 && p.y + p.size >= by && p.y + p.size <= by + 20) {
-            p.y = by - p.size; p.velY = 0; p.onGround = true;
-            if (isHolding) jump();
-        } else if (p.y + p.size > by + 5 && p.y < by + 40) {
-            if (p.x + p.size > bx && p.x < bx + 10) die();
-        }
-    }
-}
-
-function drawPlayer() {
-    ctx.save();
-    ctx.translate(player.x + player.size/2, player.y + player.size/2);
-    ctx.rotate(player.rotation * Math.PI / 180);
-    if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
-    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
-    ctx.restore();
-}
-
-function drawBlock(x, y) {
-    ctx.fillStyle = "#333"; ctx.fillRect(x, y, 45, 45);
-    ctx.strokeStyle = "#00ffff"; ctx.strokeRect(x, y, 45, 45);
-}
-
-function drawSpike(x) {
-    ctx.fillStyle = "#ff0066";
-    ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x+22, GROUND_Y-45); ctx.lineTo(x+44, GROUND_Y); ctx.fill();
-}
-
-function drawPortal(x) {
-    ctx.fillStyle = "#00ff00"; ctx.fillRect(x, GROUND_Y - 250, 40, 250);
-}
-
-function drawWorld() {
-    ctx.strokeStyle = "#222";
-    for(let i = -(distanceTraveled % 60); i < canvas.width; i+=60) {
-        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
-    }
-    ctx.fillStyle = "#050505"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
-    ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
-}
-
-function checkCollision(ox, ow, oh, oy) {
-    const m = 14;
-    return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > oy - oh);
-}
-
-function jump() { if (player.onGround) { player.velY = -15.5; player.onGround = false; } }
-function die() { isPlaying = false; setTimeout(() => { location.reload(); }, 500); }
-
-window.addEventListener("keydown", (e) => { if(e.code === "Space") isHolding = true; });
-window.addEventListener("keyup", (e) => { if(e.code === "Space") isHolding = false; });
-window.addEventListener("mousedown", () => { if (isPlaying) isHolding = true; });
-window.addEventListener("mouseup", () => isHolding = false);
-
-update();
 </script>
 </body>
 </html>
