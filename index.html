@@ -5,239 +5,202 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jiji Jumper: Official</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #060606; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { margin: 0; overflow: hidden; background: #060606; font-family: 'Segoe UI', sans-serif; }
         canvas { display: block; }
+        #overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.8); color: white; transition: 0.5s;
+        }
+        h1 { font-size: 60px; color: #00ffff; text-shadow: 0 0 20px #00ffff; margin-bottom: 10px; }
+        .btn { 
+            padding: 15px 40px; margin: 10px; font-size: 20px; cursor: pointer;
+            background: transparent; border: 2px solid #00ffff; color: white;
+            transition: 0.3s; width: 200px; text-align: center;
+        }
+        .btn:hover { background: #00ffff; color: black; box-shadow: 0 0 20px #00ffff; }
         #ui { 
             position: absolute; top: 20px; width: 100%; text-align: center; 
-            color: #00ffff; font-size: 28px; font-weight: bold; 
-            text-shadow: 0 0 12px rgba(0,255,255,0.7);
-            pointer-events: none;
-            letter-spacing: 2px;
+            color: #00ffff; font-size: 24px; font-weight: bold; pointer-events: none;
+            display: none; /* Hidden until game starts */
         }
     </style>
 </head>
 <body>
-<div id="ui">JIJI JUMPER - 0%</div>
+
+<div id="ui">0%</div>
+
+<div id="overlay">
+    <h1>JIJI JUMPER</h1>
+    <p>Select your challenge:</p>
+    <div class="btn" onclick="startGame('stereo')">Level 1: Stereo</div>
+    <div class="btn" onclick="startGame('backontrack')">Level 2: On Track</div>
+</div>
+
 <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const ui = document.getElementById("ui");
+const overlay = document.getElementById("overlay");
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- GAME CONFIGURATION ---
+// --- CONFIG ---
 const GROUND_Y = canvas.height / 2 + 100;
-let gameOver = false;
+let gameState = "MENU"; 
 let speed = 9;
 let gravity = 0.9;
 let isHolding = false;
 let progress = 0;
+let mode = "cube"; // cube or ship
 
-// --- LOAD PLAYER IMAGE ---
+// --- IMAGES ---
 const playerImg = new Image();
-// This matches your .jpeg file extension exactly
 playerImg.src = 'Jiji-jumper.jpeg'; 
 
-// --- GAME OBJECTS ---
-let player = {
-    x: 150, 
-    y: GROUND_Y - 42, 
-    size: 42,
-    velocityY: 0, 
-    rotation: 0, 
-    onGround: false
-};
+// --- PLAYER ---
+let player = { x: 150, y: GROUND_Y - 42, size: 42, velY: 0, rotation: 0, onGround: false };
 
-// Level Layout (X positions for spikes)
-let spikes = [{x: 800}, {x: 1300}, {x: 1345}, {x: 1900}, {x: 2500}, {x: 2545}, {x: 2590}];
+// --- LEVELS ---
+let obstacles = [];
 let particles = [];
 
-// --- PARTICLE SYSTEM (Death Effect) ---
-function createExplosion(x, y) {
-    for (let i = 0; i < 20; i++) {
-        particles.push({
-            x: x, y: y,
-            vx: (Math.random() - 0.5) * 16,
-            vy: (Math.random() - 0.5) * 16,
-            size: Math.random() * 8 + 4,
-            life: 1.0,
-            color: Math.random() > 0.5 ? "#00ffff" : "#ffffff"
-        });
+function startGame(level) {
+    gameState = "PLAY";
+    overlay.style.display = "none";
+    ui.style.display = "block";
+    progress = 0;
+    mode = "cube";
+    player.y = GROUND_Y - 42;
+    player.velY = 0;
+
+    if (level === 'stereo') {
+        speed = 9;
+        obstacles = [
+            {x: 800, type: 'spike'}, {x: 1200, type: 'spike'}, {x: 1245, type: 'spike'},
+            {x: 1800, type: 'portal', to: 'ship'}, {x: 2200, type: 'spike'}, {x: 2600, type: 'spike'}
+        ];
+    } else {
+        speed = 11; // Harder level
+        obstacles = [{x: 700, type: 'spike'}, {x: 850, type: 'spike'}, {x: 1000, type: 'spike'}];
     }
 }
 
-function updateParticles() {
-    for (let i = particles.length - 1; i >= 0; i--) {
-        let p = particles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life -= 0.02;
-        if (p.life <= 0) particles.splice(i, 1);
-    }
-}
-
-function drawParticles() {
-    particles.forEach(p => {
-        ctx.globalAlpha = p.life;
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, p.size, p.size);
-    });
-    ctx.globalAlpha = 1.0;
-}
-
-// --- MAIN GAME LOOP ---
+// --- CORE GAME LOOP ---
 function update() {
-    if (gameOver) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (gameState === "MENU") return requestAnimationFrame(update);
+    if (gameState === "DEAD") {
+        ctx.clearRect(0,0,canvas.width, canvas.height);
         drawWorld();
         updateParticles();
         drawParticles();
-        requestAnimationFrame(update);
-        return;
+        return requestAnimationFrame(update);
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Physics Logic
-    player.velocityY += gravity;
-    player.y += player.velocityY;
-
-    // Ground Collision & Buffer Jump
-    if (player.y > GROUND_Y - player.size) {
-        player.y = GROUND_Y - player.size;
-        player.velocityY = 0;
-        player.onGround = true;
-        
-        // The "Hold to Jump" Mechanic
-        if (isHolding) jump();
-        
-        // Snap to flat 90-degree landing
-        player.rotation = Math.round(player.rotation / 90) * 90;
-    } else {
-        player.onGround = false;
-        player.rotation += 6; // Spin speed in air
+    if (mode === "cube") {
+        player.velY += gravity;
+        if (player.y > GROUND_Y - player.size) {
+            player.y = GROUND_Y - player.size;
+            player.velY = 0;
+            player.onGround = true;
+            if (isHolding) jump();
+            player.rotation = Math.round(player.rotation / 90) * 90;
+        } else {
+            player.onGround = false;
+            player.rotation += 6;
+        }
+    } else { // SHIP MODE
+        player.velY += isHolding ? -0.5 : 0.6; // Fly up on hold
+        player.rotation = player.velY * 2; // Lean into flight
+        if (player.y > GROUND_Y - player.size) die(); // Ship dies on floor
+        if (player.y < 50) player.y = 50; // Ceiling
     }
-
-    // World Progress
-    progress += 0.06;
-    ui.innerText = `JIJI JUMPER - ${Math.min(100, Math.floor(progress))}%`;
+    
+    player.y += player.velY;
+    progress += 0.05;
+    ui.innerText = `${Math.min(100, Math.floor(progress))}%`;
 
     drawWorld();
     
-    // Spike Logic & Collision
-    spikes.forEach(s => {
-        s.x -= speed;
-        
-        // Draw Spike (Magenta/Red Glow)
-        ctx.fillStyle = "#ff0066";
-        ctx.shadowBlur = 15; ctx.shadowColor = "#ff0066";
-        ctx.beginPath();
-        ctx.moveTo(s.x, GROUND_Y);
-        ctx.lineTo(s.x + 22, GROUND_Y - 45);
-        ctx.lineTo(s.x + 44, GROUND_Y);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // "Fair" Hitbox Detection
-        const hitMargin = 8;
-        if (player.x + player.size - hitMargin > s.x + hitMargin && 
-            player.x + hitMargin < s.x + 44 - hitMargin && 
-            player.y + player.size - hitMargin > GROUND_Y - 40) {
-            die();
+    // Handle Obstacles
+    obstacles.forEach(obj => {
+        obj.x -= speed;
+        if (obj.type === 'spike') {
+            drawSpike(obj.x);
+            if (checkCollision(obj.x, 44, 45)) die();
+        } else if (obj.type === 'portal') {
+            drawPortal(obj.x);
+            if (Math.abs(player.x - obj.x) < 20) mode = "ship";
         }
-
-        // Loop spikes infinitely
-        if (s.x < -100) s.x = canvas.width + Math.random() * 600 + 200;
     });
 
     drawPlayer();
     requestAnimationFrame(update);
 }
 
+// --- DRAWING FUNCTIONS ---
 function drawPlayer() {
     ctx.save();
     ctx.translate(player.x + player.size/2, player.y + player.size/2);
     ctx.rotate(player.rotation * Math.PI / 180);
-    
-    // Cyan Glow
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = "#00ffff";
-    
-    // Draw Jiji-jumper.jpeg
-    if (playerImg.complete && playerImg.naturalWidth !== 0) {
-        ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
-    } else {
-        // Fallback: Blue square if image fails to load
-        ctx.fillStyle = "#00ffff";
-        ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
-    }
-    
-    // Border for the cube
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.shadowBlur = 15; ctx.shadowColor = "#00ffff";
+    if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
+    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
     ctx.restore();
 }
 
+function drawSpike(x) {
+    ctx.fillStyle = "#ff0066";
+    ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x+22, GROUND_Y-45); ctx.lineTo(x+44, GROUND_Y); ctx.fill();
+}
+
+function drawPortal(x) {
+    ctx.fillStyle = "#00ff00"; ctx.shadowBlur = 20; ctx.shadowColor = "#00ff00";
+    ctx.fillRect(x, GROUND_Y - 150, 30, 150);
+}
+
 function drawWorld() {
-    // Moving Grid Lines
     ctx.strokeStyle = "#1a1a1a";
-    ctx.lineWidth = 1;
-    let gridOffset = (progress * 15) % 60;
-    for(let i = -gridOffset; i < canvas.width; i += 60) {
+    for(let i = -(progress*20%60); i < canvas.width; i+=60) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
     }
-
-    // Ground Styling
-    ctx.fillStyle = "#0a0a0a";
-    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
-    
-    // Glowing Ground Line
-    ctx.strokeStyle = "#00ffff";
-    ctx.lineWidth = 4;
-    ctx.shadowBlur = 10; ctx.shadowColor = "#00ffff";
-    ctx.beginPath();
-    ctx.moveTo(0, GROUND_Y);
-    ctx.lineTo(canvas.width, GROUND_Y);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#0a0a0a"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
+    ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
 }
 
-function jump() {
-    if (player.onGround) {
-        player.velocityY = -15.5; // Snap jump
-        player.onGround = false;
-    }
+function checkCollision(ox, ow, oh) {
+    const m = 8;
+    return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > GROUND_Y - oh);
 }
+
+function jump() { if (player.onGround) { player.velY = -15.5; player.onGround = false; } }
 
 function die() {
-    if (gameOver) return;
-    gameOver = true;
-    createExplosion(player.x + player.size/2, player.y + player.size/2);
-    // Auto-restart after 1.5 seconds
-    setTimeout(() => {
-        location.reload();
-    }, 1500);
+    if (gameState === "DEAD") return;
+    gameState = "DEAD";
+    createExplosion(player.x, player.y);
+    setTimeout(() => { location.reload(); }, 1000);
 }
 
-// --- INPUT HANDLERS ---
-// Space, Up Arrow, or Left Click
-window.addEventListener("keydown", (e) => { 
-    if(e.code === "Space" || e.code === "ArrowUp") { 
-        isHolding = true; 
-        jump(); 
-    } 
-});
-window.addEventListener("keyup", (e) => { 
-    if(e.code === "Space" || e.code === "ArrowUp") isHolding = false; 
-});
+function createExplosion(x, y) {
+    for (let i = 0; i < 20; i++) particles.push({ x, y, vx:(Math.random()-0.5)*15, vy:(Math.random()-0.5)*15, size:Math.random()*8, life:1.0 });
+}
+function updateParticles() { particles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life-=0.02; }); }
+function drawParticles() { particles.forEach(p => { ctx.globalAlpha=p.life; ctx.fillStyle="cyan"; ctx.fillRect(p.x,p.y,p.size,p.size); }); ctx.globalAlpha=1; }
+
+// --- INPUTS ---
+window.addEventListener("keydown", (e) => { if(e.code === "Space") { isHolding = true; jump(); } });
+window.addEventListener("keyup", (e) => { if(e.code === "Space") isHolding = false; });
 window.addEventListener("mousedown", () => { isHolding = true; jump(); });
 window.addEventListener("mouseup", () => isHolding = false);
 
-// Initial start
 update();
 </script>
 </body>
