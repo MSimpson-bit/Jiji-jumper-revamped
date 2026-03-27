@@ -6,28 +6,24 @@
     <title>Jiji Jumper</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        
-        /* THE MENU - Forced to the very front */
         #overlay { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             background: #0a0a0a; color: white; z-index: 9999; 
         }
-        
         h1 { font-size: 50px; color: #00ffff; text-shadow: 0 0 15px #00ffff; margin-bottom: 20px; }
-        
         .btn { 
             padding: 15px 30px; margin: 10px; font-size: 22px; cursor: pointer;
             background: #111; border: 3px solid #00ffff; color: white;
-            width: 280px; text-align: center; border-radius: 12px;
+            width: 300px; text-align: center; border-radius: 12px;
             display: block; position: relative; z-index: 10000;
         }
         .btn:hover { background: #00ffff; color: #000; }
-        
         canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
         #ui { 
             position: absolute; top: 20px; width: 100%; text-align: center; 
-            color: #00ffff; font-size: 24px; font-weight: bold; z-index: 10; display: none;
+            color: #00ffff; font-size: 32px; font-weight: bold; z-index: 10; display: none;
+            text-shadow: 2px 2px 4px #000;
         }
     </style>
 </head>
@@ -55,42 +51,59 @@ canvas.height = window.innerHeight;
 
 const GROUND_Y = canvas.height / 2 + 100;
 let gameState = "MENU"; 
-let speed = 9;
-let gravity = 0.9;
-let isHolding = false;
-let progress = 0;
-let mode = "cube"; 
-let currentLevel = [];
-let particles = [];
+let speed, gravity = 0.9, isHolding = false, mode = "cube"; 
+let currentLevel = [], particles = [], distanceTraveled = 0, finishLineX = 0;
 
 const playerImg = new Image();
 playerImg.src = 'Jiji-jumper.jpeg'; 
 
 let player = { x: 150, y: GROUND_Y - 42, size: 42, velY: 0, rotation: 0, onGround: false };
 
-const levels = {
-    1: [{x: 800}, {x: 1200}, {x: 1500}, {x: 1900, type:'portal'}, {x: 2500}, {x: 3500, type:'win'}],
-    2: [{x: 600}, {x: 850}, {x: 1100, type:'portal'}, {x: 1600}, {x: 2500, type:'win'}],
-    3: [{x: 500}, {x: 550}, {x: 600}, {x: 900, type:'portal'}, {x: 1200}, {x: 1250}, {x: 1500, type:'portal'}, {x: 4000, type:'win'}]
+// --- LONG HAND-CRAFTED LEVELS ---
+// Spikes are placed every few hundred pixels. The 'win' tag is at the very end.
+const levelData = {
+    1: [
+        {x: 800}, {x: 1200}, {x: 1500}, {x: 1900, type:'portal'}, 
+        {x: 2400}, {x: 2700}, {x: 3000}, {x: 3300, type:'portal'},
+        {x: 3800}, {x: 4200}, {x: 4600}, {x: 5000, type:'portal'},
+        {x: 5500}, {x: 6000}, {x: 6500}, {x: 7000}, {x: 8000, type:'win'}
+    ],
+    2: [
+        {x: 600}, {x: 900}, {x: 1200, type:'portal'}, {x: 1600}, {x: 1900},
+        {x: 2200, type:'portal'}, {x: 2600}, {x: 2900, type:'portal'},
+        {x: 3400}, {x: 3800}, {x: 4200}, {x: 4600, type:'portal'},
+        {x: 5200}, {x: 5600}, {x: 6000}, {x: 7000, type:'portal'},
+        {x: 8000}, {x: 9000}, {x: 10000, type:'win'}
+    ],
+    3: [
+        {x: 500}, {x: 800}, {x: 1000, type:'portal'}, {x: 1300}, {x: 1500}, 
+        {x: 1800, type:'portal'}, {x: 2100}, {x: 2400}, {x: 2700, type:'portal'},
+        {x: 3100}, {x: 3400}, {x: 3700}, {x: 4000, type:'portal'},
+        {x: 4500}, {x: 4800}, {x: 5100}, {x: 5500, type:'portal'},
+        {x: 6000}, {x: 6500}, {x: 7000}, {x: 7500}, {x: 8000, type:'portal'},
+        {x: 9000}, {x: 10000}, {x: 11000}, {x: 12000}, {x: 15000, type:'win'}
+    ]
 };
 
 function startGame(num) {
-    console.log("Starting Level " + num);
+    gameState = "PLAY";
     overlay.style.display = "none";
     ui.style.display = "block";
     
-    gameState = "PLAY";
-    progress = 0;
+    distanceTraveled = 0;
     mode = "cube";
     player.y = GROUND_Y - 42;
     player.velY = 0;
     player.rotation = 0;
+    particles = [];
 
-    if(num === 1) speed = 9;
-    if(num === 2) speed = 12;
-    if(num === 3) speed = 16; 
+    speed = num === 1 ? 9 : (num === 2 ? 12 : 16);
     
-    currentLevel = levels[num].map(obj => ({ x: obj.x, type: obj.type || 'spike' }));
+    // Deep copy level and find the finish line X
+    currentLevel = levelData[num].map(obj => {
+        if (obj.type === 'win') finishLineX = obj.x;
+        return { ...obj, type: obj.type || 'spike' };
+    });
 }
 
 function update() {
@@ -99,23 +112,30 @@ function update() {
     if (gameState === "PLAY") {
         drawWorld();
         handlePhysics();
+        
+        distanceTraveled += speed;
+
+        // Accurate Progress Calculation: (Current Distance / Total Distance) * 100
+        let realPercent = Math.floor((distanceTraveled / finishLineX) * 100);
+        ui.innerText = `${Math.min(100, realPercent)}%`;
+
         currentLevel.forEach(obj => {
-            obj.x -= speed;
+            let screenX = obj.x - distanceTraveled + player.x;
+
             if (obj.type === 'spike') {
-                drawSpike(obj.x);
-                if (checkCollision(obj.x, 44, 45)) die();
+                drawSpike(screenX);
+                if (checkCollision(screenX, 44, 45)) die();
             } else if (obj.type === 'portal') {
-                drawPortal(obj.x);
-                if (Math.abs(player.x - obj.x) < 30) {
+                drawPortal(screenX);
+                if (Math.abs(player.x - screenX) < 30) {
                     mode = (mode === "cube") ? "ship" : "cube";
-                    obj.x = -5000; 
+                    obj.x = -5000; // Consume portal
                 }
-            } else if (obj.type === 'win' && obj.x < player.x) {
-                win();
+            } else if (obj.type === 'win') {
+                if (screenX < player.x) win();
             }
         });
-        progress += 0.05; 
-        ui.innerText = `${Math.min(100, Math.floor(progress))}%`;
+
         updateParticles();
         drawParticles();
         drawPlayer();
@@ -137,88 +157,7 @@ function handlePhysics() {
             player.rotation += 6;
         }
     } else {
-        player.velY += isHolding ? -0.8 : 0.8;
-        player.rotation = player.velY * 2;
-        if (player.y > GROUND_Y - player.size || player.y < 0) die();
-    }
-    player.y += player.velY;
-}
-
-function drawPlayer() {
-    ctx.save();
-    ctx.translate(player.x + player.size/2, player.y + player.size/2);
-    ctx.rotate(player.rotation * Math.PI / 180);
-    ctx.shadowBlur = 15; ctx.shadowColor = "#00ffff";
-    if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
-    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
-    ctx.restore();
-}
-
-function drawSpike(x) {
-    ctx.fillStyle = "#ff0066";
-    ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x+22, GROUND_Y-45); ctx.lineTo(x+44, GROUND_Y); ctx.fill();
-}
-
-function drawPortal(x) {
-    ctx.fillStyle = "#00ff00";
-    ctx.fillRect(x, GROUND_Y - 250, 40, 250);
-}
-
-function drawWorld() {
-    ctx.strokeStyle = "#222";
-    let gridOffset = (progress * 25) % 60;
-    for(let i = -gridOffset; i < canvas.width; i+=60) {
-        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
-    }
-    ctx.fillStyle = "#050505"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
-    ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
-}
-
-function checkCollision(ox, ow, oh) {
-    const m = 12;
-    return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > GROUND_Y - oh);
-}
-
-function jump() { if (player.onGround) { player.velY = -15.5; player.onGround = false; } }
-
-function die() {
-    if (gameState === "DEAD") return;
-    gameState = "DEAD";
-    createExplosion(player.x + 20, player.y + 20);
-    setTimeout(() => { 
-        gameState = "MENU";
-        overlay.style.display = "flex";
-        ui.style.display = "none";
-    }, 1000);
-}
-
-function win() {
-    gameState = "MENU";
-    alert("YOU WIN!");
-    overlay.style.display = "flex";
-}
-
-function createExplosion(x, y) {
-    for (let i = 0; i < 20; i++) particles.push({ x, y, vx:(Math.random()-0.5)*15, vy:(Math.random()-0.5)*15, size:Math.random()*8, life:1.0 });
-}
-function updateParticles() { 
-    for(let i = particles.length-1; i>=0; i--) {
-        let p = particles[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.02; 
-        if(p.life <= 0) particles.splice(i, 1);
-    }
-}
-function drawParticles() { particles.forEach(p => { ctx.globalAlpha=p.life; ctx.fillStyle="cyan"; ctx.fillRect(p.x,p.y,p.size,p.size); }); ctx.globalAlpha=1; }
-
-window.addEventListener("keydown", (e) => { if(e.code === "Space") { isHolding = true; jump(); } });
-window.addEventListener("keyup", (e) => { if(e.code === "Space") isHolding = false; });
-window.addEventListener("mousedown", () => { isHolding = true; jump(); });
-window.addEventListener("mouseup", () => isHolding = false);
-
-update();
-</script>
-</body>
-</html>
+        player.velY += isHolding ? -0.
     overlay.style.display = "flex";
 }
 
