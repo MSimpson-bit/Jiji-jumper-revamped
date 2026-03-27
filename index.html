@@ -33,9 +33,9 @@
 
 <div id="overlay">
     <h1>JIJI JUMPER</h1>
-    <button class="btn" onclick="startGame(1)">LEVEL 1: STEREO</button>
-    <button class="btn" onclick="startGame(2)">LEVEL 2: ON TRACK</button>
-    <button class="btn" onclick="startGame(3)" style="border-color:#ff0066; color:#ff0066;">LEVEL 3: IMPOSSIBLE</button>
+    <button class="btn" onclick="startGame(1)">LEVEL 1: STEREO (NORMAL)</button>
+    <button class="btn" onclick="startGame(2)">LEVEL 2: ON TRACK (LONG)</button>
+    <button class="btn" onclick="startGame(3)" style="border-color:#ff0066; color:#ff0066;">LEVEL 3: IMPOSSIBLE (MARATHON)</button>
 </div>
 
 <canvas id="game"></canvas>
@@ -52,37 +52,19 @@ canvas.height = window.innerHeight;
 const GROUND_Y = canvas.height / 2 + 100;
 let gameState = "MENU"; 
 let speed, gravity = 0.9, isHolding = false, mode = "cube"; 
-let currentLevel = [], particles = [], distanceTraveled = 0, finishLineX = 0;
+let currentLevel = [], particles = [], distanceTraveled = 0, levelLength = 0;
 
 const playerImg = new Image();
 playerImg.src = 'Jiji-jumper.jpeg'; 
 
 let player = { x: 150, y: GROUND_Y - 42, size: 42, velY: 0, rotation: 0, onGround: false };
 
-// --- LONG HAND-CRAFTED LEVELS ---
-// Spikes are placed every few hundred pixels. The 'win' tag is at the very end.
+// --- TRUE LONG LEVELS ---
+// levelLength is the total pixels you must travel to hit 100%
 const levelData = {
-    1: [
-        {x: 800}, {x: 1200}, {x: 1500}, {x: 1900, type:'portal'}, 
-        {x: 2400}, {x: 2700}, {x: 3000}, {x: 3300, type:'portal'},
-        {x: 3800}, {x: 4200}, {x: 4600}, {x: 5000, type:'portal'},
-        {x: 5500}, {x: 6000}, {x: 6500}, {x: 7000}, {x: 8000, type:'win'}
-    ],
-    2: [
-        {x: 600}, {x: 900}, {x: 1200, type:'portal'}, {x: 1600}, {x: 1900},
-        {x: 2200, type:'portal'}, {x: 2600}, {x: 2900, type:'portal'},
-        {x: 3400}, {x: 3800}, {x: 4200}, {x: 4600, type:'portal'},
-        {x: 5200}, {x: 5600}, {x: 6000}, {x: 7000, type:'portal'},
-        {x: 8000}, {x: 9000}, {x: 10000, type:'win'}
-    ],
-    3: [
-        {x: 500}, {x: 800}, {x: 1000, type:'portal'}, {x: 1300}, {x: 1500}, 
-        {x: 1800, type:'portal'}, {x: 2100}, {x: 2400}, {x: 2700, type:'portal'},
-        {x: 3100}, {x: 3400}, {x: 3700}, {x: 4000, type:'portal'},
-        {x: 4500}, {x: 4800}, {x: 5100}, {x: 5500, type:'portal'},
-        {x: 6000}, {x: 6500}, {x: 7000}, {x: 7500}, {x: 8000, type:'portal'},
-        {x: 9000}, {x: 10000}, {x: 11000}, {x: 12000}, {x: 15000, type:'win'}
-    ]
+    1: { length: 10000, speed: 9, obstacles: [{x:800},{x:1400},{x:2000,t:'p'},{x:2800},{x:3500,t:'p'},{x:4500},{x:5500,t:'p'},{x:7000},{x:8500}] },
+    2: { length: 18000, speed: 12, obstacles: [{x:600},{x:1000,t:'p'},{x:1800},{x:2500,t:'p'},{x:3500},{x:4500,t:'p'},{x:6000},{x:8000,t:'p'},{x:11000},{x:14000}] },
+    3: { length: 30000, speed: 17, obstacles: [{x:500},{x:1000,t:'p'},{x:2000},{x:3000,t:'p'},{x:5000},{x:7000,t:'p'},{x:10000},{x:15000,t:'p'},{x:20000},{x:25000}] }
 };
 
 function startGame(num) {
@@ -97,13 +79,10 @@ function startGame(num) {
     player.rotation = 0;
     particles = [];
 
-    speed = num === 1 ? 9 : (num === 2 ? 12 : 16);
-    
-    // Deep copy level and find the finish line X
-    currentLevel = levelData[num].map(obj => {
-        if (obj.type === 'win') finishLineX = obj.x;
-        return { ...obj, type: obj.type || 'spike' };
-    });
+    const data = levelData[num];
+    speed = data.speed;
+    levelLength = data.length;
+    currentLevel = data.obstacles.map(o => ({ x: o.x, type: o.t === 'p' ? 'portal' : 'spike', active: true }));
 }
 
 function update() {
@@ -115,11 +94,18 @@ function update() {
         
         distanceTraveled += speed;
 
-        // Accurate Progress Calculation: (Current Distance / Total Distance) * 100
-        let realPercent = Math.floor((distanceTraveled / finishLineX) * 100);
-        ui.innerText = `${Math.min(100, realPercent)}%`;
+        // Force 100% calculation based on the Level Length variable
+        let percent = Math.floor((distanceTraveled / levelLength) * 100);
+        ui.innerText = `${Math.min(100, percent)}%`;
+
+        // Check for Win
+        if (distanceTraveled >= levelLength) {
+            win();
+            return;
+        }
 
         currentLevel.forEach(obj => {
+            if (!obj.active) return;
             let screenX = obj.x - distanceTraveled + player.x;
 
             if (obj.type === 'spike') {
@@ -129,10 +115,8 @@ function update() {
                 drawPortal(screenX);
                 if (Math.abs(player.x - screenX) < 30) {
                     mode = (mode === "cube") ? "ship" : "cube";
-                    obj.x = -5000; // Consume portal
+                    obj.active = false; // Portal used
                 }
-            } else if (obj.type === 'win') {
-                if (screenX < player.x) win();
             }
         });
 
@@ -157,9 +141,86 @@ function handlePhysics() {
             player.rotation += 6;
         }
     } else {
-        player.velY += isHolding ? -0.
-    overlay.style.display = "flex";
+        player.velY += isHolding ? -0.8 : 0.8;
+        player.rotation = player.velY * 2;
+        if (player.y > GROUND_Y - player.size || player.y < 0) die();
+    }
+    player.y += player.velY;
+}
+
+function drawPlayer() {
+    ctx.save();
+    ctx.translate(player.x + player.size/2, player.y + player.size/2);
+    ctx.rotate(player.rotation * Math.PI / 180);
+    ctx.shadowBlur = 15; ctx.shadowColor = "#00ffff";
+    if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
+    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.restore();
+}
+
+function drawSpike(x) {
+    if (x < -100 || x > canvas.width + 100) return;
+    ctx.fillStyle = "#ff0066";
+    ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x+22, GROUND_Y-45); ctx.lineTo(x+44, GROUND_Y); ctx.fill();
+}
+
+function drawPortal(x) {
+    ctx.fillStyle = "#00ff00";
+    ctx.fillRect(x, GROUND_Y - 250, 40, 250);
+}
+
+function drawWorld() {
+    ctx.strokeStyle = "#222";
+    let gridOffset = (distanceTraveled) % 60;
+    for(let i = -gridOffset; i < canvas.width; i+=60) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+    }
+    ctx.fillStyle = "#050505"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
+    ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
+}
+
+function checkCollision(ox, ow, oh) {
+    const m = 14; // Strict hitbox for fairness
+    return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > GROUND_Y - oh);
+}
+
+function jump() { if (player.onGround) { player.velY = -15.5; player.onGround = false; } }
+
+function die() {
+    if (gameState === "DEAD") return;
+    gameState = "DEAD";
+    createExplosion(player.x + 20, player.y + 20);
+    setTimeout(() => { 
+        gameState = "MENU";
+        overlay.style.display = "flex";
+        ui.style.display = "none";
+    }, 1000);
+}
+
+function win() {
+    gameState = "WIN";
+    alert("LEVEL 100% COMPLETE!");
+    location.reload();
 }
 
 function createExplosion(x, y) {
-    for (let i =
+    for (let i = 0; i < 20; i++) particles.push({ x, y, vx:(Math.random()-0.5)*15, vy:(Math.random()-0.5)*15, size:Math.random()*8, life:1.0 });
+}
+function updateParticles() { 
+    for(let i = particles.length-1; i>=0; i--) {
+        let p = particles[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.02; 
+        if(p.life <= 0) particles.splice(i, 1);
+    }
+}
+function drawParticles() { particles.forEach(p => { ctx.globalAlpha=p.life; ctx.fillStyle="cyan"; ctx.fillRect(p.x,p.y,p.size,p.size); }); ctx.globalAlpha=1; }
+
+window.addEventListener("keydown", (e) => { if(e.code === "Space") { isHolding = true; jump(); } });
+window.addEventListener("keyup", (e) => { if(e.code === "Space") isHolding = false; });
+window.addEventListener("mousedown", () => { isHolding = true; jump(); });
+window.addEventListener("mouseup", () => isHolding = false);
+
+update();
+</script>
+</body>
+</html>
