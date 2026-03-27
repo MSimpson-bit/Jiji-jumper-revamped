@@ -5,12 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jiji Jumper</title>
     <style>
-        body { margin: 0; background: #000; color: #00ffff; font-family: 'Courier New', monospace; overflow: hidden; text-align: center; }
-        #menu { position: absolute; width: 100%; top: 20%; z-index: 100; }
-        h1 { font-size: 50px; text-shadow: 0 0 10px #00ffff; }
-        .instruction { font-size: 24px; margin: 20px; color: white; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: #00ffff; }
+        
+        /* Menu stays simple so it actually works */
+        #menu { 
+            position: absolute; width: 100%; height: 100%; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: radial-gradient(circle, #111 0%, #000 100%); z-index: 100; 
+        }
+        
+        h1 { font-size: 60px; text-shadow: 0 0 20px #00ffff; margin-bottom: 10px; }
+        .key-hint { font-size: 24px; color: white; margin: 10px; padding: 10px; border: 1px solid #333; width: 300px; border-radius: 8px; }
+        
         canvas { display: none; position: absolute; top: 0; left: 0; }
-        #ui { position: absolute; top: 10px; width: 100%; font-size: 30px; display: none; }
+        
+        #ui { 
+            position: absolute; top: 20px; width: 100%; text-align: center; 
+            color: #00ffff; font-size: 32px; font-weight: bold; z-index: 10; display: none;
+            text-shadow: 2px 2px 4px #000;
+        }
     </style>
 </head>
 <body>
@@ -19,11 +32,11 @@
 
 <div id="menu">
     <h1>JIJI JUMPER</h1>
-    <p class="instruction">PRESS A KEY TO START:</p>
-    <p class="instruction" style="color: #00ffff;"> - LEVEL 1: STEREO</p>
-    <p class="instruction" style="color: #00ffff;"> - LEVEL 2: ON TRACK</p>
-    <p class="instruction" style="color: #ff0066;"> - LEVEL 3: IMPOSSIBLE</p>
-    <p style="margin-top: 40px; color: #555;">(Or Click/Tap anywhere to start Level 1)</p>
+    <p style="color: #888;">Select Level to Begin:</p>
+    <div class="key-hint">Press <b style="color:#00ffff"></b> for LEVEL 1</div>
+    <div class="key-hint">Press <b style="color:#00ffff"></b> for LEVEL 2</div>
+    <div class="key-hint">Press <b style="color:#ff0066"></b> for IMPOSSIBLE</div>
+    <p style="margin-top: 20px; font-size: 14px;">(Space to Jump / Hold to Fly)</p>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -37,93 +50,158 @@ const ui = document.getElementById("ui");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+const GROUND_Y = canvas.height / 2 + 150;
 let isPlaying = false;
-let distance = 0, totalLength = 10000, speed = 10;
-let player = { x: 150, y: 0, size: 40, vY: 0, mode: "cube" };
-let obstacles = [];
-const GROUND = canvas.height / 2 + 100;
+let speed, levelLength, distanceTraveled = 0;
+let gravity = 0.9, isHolding = false, mode = "cube";
+let currentLevel = [];
 
-// Level Setup
+// --- LOAD YOUR FACE ---
+const playerImg = new Image();
+playerImg.src = 'Jiji-jumper.jpeg'; 
+
+let player = { x: 200, y: GROUND_Y - 50, size: 50, velY: 0, rotation: 0, onGround: false };
+
+// --- FULL DECORATED LEVELS ---
 const levelData = {
-    1: { len: 15000, spd: 9, obs: [{x:1000, t:'s'}, {x:2000, t:'b'}, {x:3000, t:'p'}] },
-    2: { len: 25000, spd: 13, obs: [{x:800, t:'b'}, {x:1500, t:'p'}, {x:2200, t:'s'}] },
-    3: { len: 45000, spd: 19, obs: [{x:500, t:'s'}, {x:900, t:'p'}, {x:1500, t:'s'}] }
+    1: { length: 15000, speed: 9, obs: [
+        {x: 1000, t:'s'}, {x: 1500, t:'b', h:50}, {x: 1550, t:'b', h:50}, 
+        {x: 2200, t:'p'}, {x: 3000, t:'b', h:120}, {x: 4000, t:'s'}, {x: 4500, t:'p'}
+    ]},
+    2: { length: 25000, speed: 13, obs: [
+        {x: 800, t:'b', h:50}, {x: 1000, t:'b', h:100}, {x: 1200, t:'b', h:150},
+        {x: 1800, t:'p'}, {x: 2500, t:'s'}, {x: 3500, t:'b', h:80}, {x: 4500, t:'p'}
+    ]},
+    3: { length: 50000, speed: 19, obs: [
+        {x: 600, t:'s'}, {x: 650, t:'s'}, {x: 1200, t:'p'}, {x: 2000, t:'b', h:150}
+    ]}
 };
 
-function start(levelNum) {
-    const data = levelData[levelNum] || levelData;
-    speed = data.spd;
-    totalLength = data.len;
-    obstacles = data.obs;
+function startLevel(num) {
+    const data = levelData[num];
+    speed = data.speed;
+    levelLength = data.length;
+    currentLevel = data.obs.map(o => ({ 
+        x: o.x, y: GROUND_Y - (o.h || 0), 
+        type: o.t === 'p' ? 'portal' : (o.t === 'b' ? 'block' : 'spike'), 
+        active: true 
+    }));
     
     menu.style.display = "none";
     canvas.style.display = "block";
     ui.style.display = "block";
-    
-    player.y = GROUND - 40;
     isPlaying = true;
-    animate();
+    update();
 }
 
-// FAIL-SAFE INPUT: Keyboard
 window.addEventListener("keydown", (e) => {
     if (!isPlaying) {
-        if (e.key === "1") start(1);
-        if (e.key === "2") start(2);
-        if (e.key === "3") start(3);
-    } else {
-        if (e.code === "Space" || e.code === "ArrowUp") jump();
+        if (e.key === "1") startLevel(1);
+        if (e.key === "2") startLevel(2);
+        if (e.key === "3") startLevel(3);
+    } else if (e.code === "Space" || e.code === "ArrowUp") {
+        isHolding = true;
+        if (player.onGround && mode === "cube") {
+            player.velY = -16;
+            player.onGround = false;
+        }
     }
 });
 
-// FAIL-SAFE INPUT: Mouse/Touch (Starts Level 1 if in Menu)
-window.addEventListener("mousedown", () => {
-    if (!isPlaying) start(1);
-    else jump();
-});
+window.addEventListener("keyup", (e) => { if (e.code === "Space" || e.code === "ArrowUp") isHolding = false; });
+window.addEventListener("mousedown", () => { isHolding = true; if (!isPlaying) startLevel(1); else if (player.onGround && mode === "cube") { player.velY = -16; player.onGround = false; } });
+window.addEventListener("mouseup", () => isHolding = false);
 
-function jump() {
-    if (player.mode === "cube" && player.y >= GROUND - 40) {
-        player.vY = -16;
-    }
-}
-
-function animate() {
+function update() {
     if (!isPlaying) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Physics
-    if (player.mode === "cube") {
-        player.vY += 0.9;
-        player.y += player.vY;
-        if (player.y > GROUND - 40) { player.y = GROUND - 40; player.vY = 0; }
+    // Background Grid
+    ctx.strokeStyle = "#111";
+    for(let i = -(distanceTraveled % 80); i < canvas.width; i+=80) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
     }
-    
-    distance += speed;
-    ui.innerText = Math.floor((distance / totalLength) * 100) + "%";
-    
-    if (distance >= totalLength) { alert("WIN!"); location.reload(); }
+
+    // Physics
+    if (mode === "cube") {
+        player.velY += gravity;
+        player.y += player.velY;
+        if (player.y > GROUND_Y - player.size) {
+            player.y = GROUND_Y - player.size;
+            player.velY = 0;
+            player.onGround = true;
+            player.rotation = Math.round(player.rotation / 90) * 90;
+        } else {
+            player.onGround = false;
+            player.rotation += 6;
+        }
+    } else { // Ship Physics
+        player.velY += isHolding ? -0.8 : 0.8;
+        player.y += player.velY;
+        player.rotation = player.velY * 2;
+        if (player.y > GROUND_Y - player.size || player.y < 0) die();
+    }
+
+    distanceTraveled += speed;
+    ui.innerText = Math.floor((distanceTraveled / levelLength) * 100) + "%";
+    if (distanceTraveled >= levelLength) win();
 
     // Draw Ground
-    ctx.fillStyle = "#111"; ctx.fillRect(0, GROUND, canvas.width, canvas.height);
-    ctx.strokeStyle = "#00ffff"; ctx.strokeRect(0, GROUND, canvas.width, 2);
+    ctx.fillStyle = "#050505"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
+    ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
 
-    // Draw Obstacles
-    obstacles.forEach(o => {
-        let sx = o.x - distance + player.x;
-        if (o.t === 's') {
-            ctx.fillStyle = "red";
-            ctx.beginPath(); ctx.moveTo(sx, GROUND); ctx.lineTo(sx+20, GROUND-40); ctx.lineTo(sx+40, GROUND); ctx.fill();
-            if (sx < player.x + 30 && sx + 40 > player.x && player.y > GROUND - 40) location.reload();
+    // Obstacles
+    currentLevel.forEach(obj => {
+        let screenX = obj.x - distanceTraveled + player.x;
+        if (obj.type === 'spike') {
+            ctx.fillStyle = "#ff0066";
+            ctx.beginPath(); ctx.moveTo(screenX, GROUND_Y); ctx.lineTo(screenX+25, GROUND_Y-50); ctx.lineTo(screenX+50, GROUND_Y); ctx.fill();
+            if (checkCollision(screenX, 50, 50, GROUND_Y)) die();
+        } else if (obj.type === 'block') {
+            ctx.fillStyle = "#222"; ctx.fillRect(screenX, obj.y, 50, 50);
+            ctx.strokeStyle = "#00ffff"; ctx.strokeRect(screenX, obj.y, 50, 50);
+            checkBlockCollision(screenX, obj.y);
+        } else if (obj.type === 'portal') {
+            ctx.fillStyle = "#00ff00"; ctx.fillRect(screenX, GROUND_Y-300, 50, 300);
+            if (Math.abs(player.x - screenX) < 30 && obj.active) { mode = mode === "cube" ? "ship" : "cube"; obj.active = false; }
         }
     });
 
-    // Draw Player
-    ctx.fillStyle = "cyan";
-    ctx.fillRect(player.x, player.y, player.size, player.size);
-    
-    requestAnimationFrame(animate);
+    // Draw Jiji
+    ctx.save();
+    ctx.translate(player.x + player.size/2, player.y + player.size/2);
+    ctx.rotate(player.rotation * Math.PI / 180);
+    if (playerImg.complete) {
+        ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
+    } else {
+        ctx.fillStyle = "cyan"; ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
+    }
+    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.restore();
+
+    requestAnimationFrame(update);
 }
+
+function checkBlockCollision(bx, by) {
+    const p = player;
+    if (p.x + p.size > bx && p.x < bx + 50) {
+        if (p.velY >= 0 && p.y + p.size >= by && p.y + p.size <= by + 25) {
+            p.y = by - p.size; p.velY = 0; p.onGround = true;
+        } else if (p.y + p.size > by + 5 && p.y < by + 45) {
+            die();
+        }
+    }
+}
+
+function checkCollision(ox, ow, oh, oy) {
+    const m = 15;
+    return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > oy - oh + m);
+}
+
+function die() { isPlaying = false; setTimeout(() => location.reload(), 400); }
+function win() { isPlaying = false; alert("100% COMPLETE!"); location.reload(); }
+
 </script>
 </body>
 </html>
