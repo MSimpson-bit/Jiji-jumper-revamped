@@ -6,22 +6,31 @@
     <title>Jiji Jumper</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        canvas { display: block; }
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        /* Fixed Menu Layering */
         #overlay { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: radial-gradient(circle, #111 0%, #000 100%); color: white; z-index: 10;
+            background: radial-gradient(circle, #111 0%, #000 100%); 
+            color: white; 
+            z-index: 100; /* Keeps menu on top of game */
         }
+        
         h1 { font-size: 60px; color: #00ffff; text-shadow: 0 0 20px #00ffff; margin-bottom: 30px; }
+        
         .btn { 
             padding: 15px 40px; margin: 10px; font-size: 20px; cursor: pointer;
             background: rgba(0,255,255,0.1); border: 2px solid #00ffff; color: white;
-            transition: 0.3s; width: 250px; text-align: center; border-radius: 8px;
+            transition: 0.3s; width: 280px; text-align: center; border-radius: 8px;
+            z-index: 101;
         }
         .btn:hover { background: #00ffff; color: black; box-shadow: 0 0 20px #00ffff; }
+        
         #ui { 
             position: absolute; top: 20px; width: 100%; text-align: center; 
-            color: #00ffff; font-size: 24px; font-weight: bold; pointer-events: none; display: none;
+            color: #00ffff; font-size: 24px; font-weight: bold; pointer-events: none; 
+            display: none; z-index: 50;
         }
     </style>
 </head>
@@ -33,6 +42,7 @@
     <h1>JIJI JUMPER</h1>
     <div class="btn" onclick="startGame(1)">LEVEL 1: STEREO</div>
     <div class="btn" onclick="startGame(2)">LEVEL 2: ON TRACK</div>
+    <div class="btn" onclick="startGame(3)" style="border-color: #ff0066; color: #ff0066;">LEVEL 3: IMPOSSIBLE</div>
 </div>
 
 <canvas id="game"></canvas>
@@ -66,19 +76,25 @@ const levels = {
     1: [
         {x: 800}, {x: 1200}, {x: 1500}, {x: 1545}, {x: 1900, type:'portal'}, 
         {x: 2300}, {x: 2500}, {x: 2700}, {x: 2900}, {x: 3200, type:'portal'},
-        {x: 3600}, {x: 3645}, {x: 3690}, {x: 4100}, {x: 4400}, {x: 4700},
-        {x: 5000}, {x: 5045}, {x: 5400}, {x: 5800}, {x: 6200, type:'win'}
+        {x: 3600}, {x: 3645}, {x: 4100}, {x: 5000}, {x: 6000, type:'win'}
     ],
     2: [
         {x: 600}, {x: 750}, {x: 900}, {x: 1200, type:'portal'},
         {x: 1600}, {x: 1800}, {x: 1845}, {x: 2100}, {x: 2400},
         {x: 2700, type:'portal'}, {x: 3000}, {x: 3045}, {x: 3090},
-        {x: 3500}, {x: 3800}, {x: 4100}, {x: 4400}, {x: 4800, type:'win'}
+        {x: 3500}, {x: 4000, type:'win'}
+    ],
+    3: [
+        {x: 500}, {x: 545}, {x: 700}, {x: 745}, {x: 900}, {x: 1100, type:'portal'},
+        {x: 1400}, {x: 1445}, {x: 1490}, {x: 1800}, {x: 2000, type:'portal'},
+        {x: 2300}, {x: 2345}, {x: 2600}, {x: 2645}, {x: 2900}, {x: 2945},
+        {x: 3200, type:'portal'}, {x: 3500}, {x: 3545}, {x: 3590}, {x: 3635},
+        {x: 4000}, {x: 4200}, {x: 4400}, {x: 4600, type:'portal'},
+        {x: 5000}, {x: 5100}, {x: 5200}, {x: 5300}, {x: 5400}, {x: 8000, type:'win'}
     ]
 };
 
 function startGame(num) {
-    // Reset Everything
     gameState = "PLAY";
     overlay.style.display = "none";
     ui.style.display = "block";
@@ -89,9 +105,11 @@ function startGame(num) {
     player.rotation = 0;
     particles = [];
     
-    speed = num === 1 ? 9 : 12; 
+    // Set Difficulty
+    if(num === 1) speed = 9;
+    if(num === 2) speed = 12;
+    if(num === 3) speed = 15; 
     
-    // Load objects and give them types if missing
     currentLevel = levels[num].map(obj => ({
         x: obj.x,
         type: obj.type || 'spike'
@@ -104,11 +122,8 @@ function update() {
 
     if (gameState === "PLAY") {
         handlePhysics();
-        
-        // Update and Draw Objects
         currentLevel.forEach(obj => {
             obj.x -= speed;
-
             if (obj.type === 'spike') {
                 drawSpike(obj.x);
                 if (checkCollision(obj.x, 44, 45)) die();
@@ -116,13 +131,12 @@ function update() {
                 drawPortal(obj.x);
                 if (Math.abs(player.x - obj.x) < 30) {
                     mode = (mode === "cube") ? "ship" : "cube";
-                    obj.x = -5000; // Move portal away after use
+                    obj.x = -5000; 
                 }
             } else if (obj.type === 'win') {
                 if (obj.x < player.x) win();
             }
         });
-
         progress += 0.05; 
         ui.innerText = `${Math.min(100, Math.floor(progress))}%`;
     }
@@ -169,11 +183,9 @@ function drawPlayer() {
 }
 
 function drawSpike(x) {
-    if (x < -100 || x > canvas.width + 100) return; // Optimization
-    ctx.shadowBlur = 10; ctx.shadowColor = "#ff0066";
+    if (x < -100 || x > canvas.width + 100) return;
     ctx.fillStyle = "#ff0066";
     ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x+22, GROUND_Y-45); ctx.lineTo(x+44, GROUND_Y); ctx.fill();
-    ctx.shadowBlur = 0;
 }
 
 function drawPortal(x) {
@@ -184,20 +196,18 @@ function drawPortal(x) {
 }
 
 function drawWorld() {
-    // Grid
     ctx.strokeStyle = "#1a1a1a";
     let gridOffset = (progress * 25) % 60;
     for(let i = -gridOffset; i < canvas.width; i+=60) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
     }
-    // Ground
     ctx.fillStyle = "#050505"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
     ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(canvas.width, GROUND_Y); ctx.stroke();
 }
 
 function checkCollision(ox, ow, oh) {
-    const m = 12; // Hitbox margin
+    const m = 12;
     return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > GROUND_Y - oh);
 }
 
@@ -217,6 +227,30 @@ function die() {
 function win() {
     gameState = "MENU";
     alert("LEVEL COMPLETE!");
+    overlay.style.display = "flex";
+}
+
+function createExplosion(x, y) {
+    for (let i = 0; i < 20; i++) particles.push({ x, y, vx:(Math.random()-0.5)*15, vy:(Math.random()-0.5)*15, size:Math.random()*8, life:1.0 });
+}
+function updateParticles() { 
+    for(let i = particles.length-1; i>=0; i--) {
+        let p = particles[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.02; 
+        if(p.life <= 0) particles.splice(i, 1);
+    }
+}
+function drawParticles() { particles.forEach(p => { ctx.globalAlpha=p.life; ctx.fillStyle="cyan"; ctx.fillRect(p.x,p.y,p.size,p.size); }); ctx.globalAlpha=1; }
+
+// --- CONTROLS ---
+window.addEventListener("keydown", (e) => { if(e.code === "Space" || e.code === "ArrowUp") { isHolding = true; jump(); } });
+window.addEventListener("keyup", (e) => { if(e.code === "Space" || e.code === "ArrowUp") isHolding = false; });
+window.addEventListener("mousedown", () => { isHolding = true; jump(); });
+window.addEventListener("mouseup", () => isHolding = false);
+
+update();
+</script>
+</body>
+</html>
     overlay.style.display = "flex";
 }
 
