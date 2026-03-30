@@ -7,29 +7,20 @@
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; color: #fff; }
         
-        /* THE MENU - Simple, high-contrast, and keyboard-driven */
+        /* THE MENU - Guaranteed to show because it's the only thing visible at start */
         #menu { 
             position: absolute; width: 100%; height: 100%; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             background: #000; z-index: 100; text-align: center;
         }
         
-        h1 { font-size: 70px; color: #00ffff; text-shadow: 0 0 20px #00ffff; margin-bottom: 5px; }
-        .stat-line { color: #555; margin-bottom: 30px; font-size: 18px; }
-        
-        .level-option { 
-            font-size: 28px; margin: 15px; padding: 10px; width: 400px;
-            border: 1px solid #333; border-radius: 5px; 
-        }
-        .key-box { background: #00ffff; color: #000; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+        h1 { font-size: 60px; color: #00ffff; text-shadow: 0 0 20px #00ffff; margin-bottom: 10px; }
+        .instruction { font-size: 24px; margin: 10px; color: #aaa; }
+        .key-prompt { font-size: 32px; color: #fff; margin: 15px; border: 1px solid #333; padding: 10px; width: 400px; border-radius: 10px; }
+        .key-prompt b { color: #00ffff; background: rgba(0,255,255,0.1); padding: 0 10px; border-radius: 5px; }
 
-        canvas { display: none; position: absolute; top: 0; left: 0; }
-        
-        #ui { 
-            position: absolute; top: 20px; width: 100%; text-align: center; 
-            font-size: 30px; font-weight: bold; z-index: 10; display: none; 
-            color: rgba(255, 255, 255, 0.5); pointer-events: none;
-        }
+        canvas { display: none; position: absolute; top: 0; left: 0; z-index: 1; }
+        #ui { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 30px; z-index: 10; display: none; color: #00ffff; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -38,13 +29,11 @@
 
 <div id="menu">
     <h1>JIJI JUMPER</h1>
-    <div id="stats" class="stat-line">Best Run: 0%</div>
-    
-    <div class="level-option">Press <span class="key-box">1</span> for STEREO MADNESS</div>
-    <div class="level-option">Press <span class="key-box">2</span> for BACK ON TRACK</div>
-    <div class="level-option">Press <span class="key-box">3</span> for POLARGEIST</div>
-    
-    <p style="margin-top: 50px; color: #444;">[SPACE] TO JUMP/HOLD TO FLY</p>
+    <p class="instruction">No clicking needed. Use your keyboard:</p>
+    <div class="key-prompt">Press <b>1</b> for Level 1</div>
+    <div class="key-prompt">Press <b>2</b> for Level 2</div>
+    <div class="key-prompt">Press <b>3</b> for Level 3</div>
+    <p style="margin-top: 30px; color: #555;">[SPACE] to Jump & Hold [SPACE] to Fly</p>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -54,16 +43,12 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const menu = document.getElementById("menu");
 const ui = document.getElementById("ui");
-const statDisplay = document.getElementById("stats");
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- PERSISTENT DATA ---
+// Stats tracking
 let attempts = parseInt(localStorage.getItem('jijiAttempts')) || 1;
-let highScore = parseInt(localStorage.getItem('jijiHighScore')) || 0;
-statDisplay.innerText = `Best Run: ${highScore}% | Total Attempts: ${attempts}`;
-
 const GROUND_Y = canvas.height / 2 + 150;
 const CEILING_Y = GROUND_Y - 450;
 
@@ -72,69 +57,69 @@ let speed, levelLength, distanceTraveled = 0;
 let gravity = 0.98, isHolding = false, mode = "cube", bufferTimer = 0;
 let currentLevel = [];
 
+// Load the Face
 const playerImg = new Image();
 playerImg.src = 'Jiji-jumper.jpeg'; 
 let player = { x: 250, y: GROUND_Y - 48, size: 48, velY: 0, rotation: 0, onGround: false };
 
-// --- FULLY POPULATED LEVEL GENERATOR ---
-function generateFullLevel(num) {
+// Level Patterns
+function generateDenseLevel(num) {
     let obs = [];
-    let x = 1000;
+    let x = 1200;
     let len =[num-1];
-    
     while (x < len - 1000) {
-        let rand = Math.random();
-        if (rand < 0.4) { // DENSE SPIKES
+        let r = Math.random();
+        if (r < 0.4) { // Spikes
             obs.push({x: x, t:'s'});
-            if (Math.random() > 0.5) obs.push({x: x+55, t:'s'}); // Double spikes
-            x += 600;
-        } else if (rand < 0.7) { // STAIRS & BLOCKS
-            let h = 50 + Math.floor(Math.random() * 2) * 50;
-            obs.push({x: x, t:'b', h: h}, {x: x+52, t:'b', h: h});
-            x += 500;
-        } else { // ORB SEQUENCES
-            obs.push({x: x, t:'o', h: 120 + Math.random() * 80});
+            if (Math.random() > 0.6) obs.push({x: x+55, t:'s'}); 
             x += 700;
+        } else if (r < 0.7) { // Blocks/Stairs
+            let h = 50 + (Math.random() > 0.5 ? 50 : 0);
+            obs.push({x: x, t:'b', h: h}, {x: x+52, t:'b', h: h});
+            x += 600;
+        } else { // Orbs
+            obs.push({x: x, t:'o', h: 130 + Math.random() * 70});
+            x += 800;
         }
-        
-        // Portals & Roof Spikes every 5000 units
-        if (x % 5000 < 800) {
+        if (x % 5000 < 800) { // Portals
             obs.push({x: x, t:'p'});
-            for(let i=0; i<5; i++) obs.push({x: x + 400 + (i*400), t:'rs'});
-            x += 2500;
+            for(let i=0; i<4; i++) obs.push({x: x + 500 + (i*600), t:'rs'});
+            x += 3000;
         }
     }
     return { len, obs };
 }
 
-function start(num) {
-    attempts++;
-    localStorage.setItem('jijiAttempts', attempts);
+function startGame(num) {
+    localStorage.setItem('jijiAttempts', ++attempts);
+    const data = generateDenseLevel(num);
+    const set = [{c:"#000814", s:10}, {c:"#051505", s:14}, {c:"#150505", s:20}][num-1];
     
-    const data = generateFullLevel(num);
-    const colors = ["#000510", "#051005", "#100000"];
-    const speeds =;
-    
-    speed = speeds[num-1];
+    speed = set.s;
     levelLength = data.len;
-    bgColor = colors[num-1];
+    bgColor = set.c;
     currentLevel = data.obs.map(o => ({ x: o.x, y: GROUND_Y - (o.h || 0), type: o.t, active: true }));
     
-    menu.style.display = "none"; canvas.style.display = "block"; ui.style.display = "block";
-    isPlaying = true; update();
+    menu.style.display = "none";
+    canvas.style.display = "block";
+    ui.style.display = "block";
+    isPlaying = true;
+    update();
 }
 
-// --- FAIL-SAFE INPUT ---
+// THE INPUT FIX: One listener to rule them all
 window.addEventListener("keydown", (e) => {
     if (!isPlaying) {
-        if (e.key === "1") start(1);
-        if (e.key === "2") start(2);
-        if (e.key === "3") start(3);
-    } else if (e.code === "Space" || e.key === "w" || e.key === "ArrowUp") { 
-        isHolding = true; bufferTimer = 12; 
+        if (e.key === "1") startGame(1);
+        if (e.key === "2") startGame(2);
+        if (e.key === "3") startGame(3);
+    } else if (e.code === "Space") {
+        isHolding = true;
+        bufferTimer = 12;
     }
 });
-window.addEventListener("keyup", (e) => { isHolding = false; });
+
+window.addEventListener("keyup", (e) => { if (e.code === "Space") isHolding = false; });
 window.addEventListener("mousedown", () => { isHolding = true; bufferTimer = 12; });
 window.addEventListener("mouseup", () => isHolding = false);
 
@@ -142,13 +127,10 @@ function update() {
     if (!isPlaying) return;
     ctx.fillStyle = bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
     distanceTraveled += speed;
-    
-    let progress = Math.min(100, Math.floor((distanceTraveled / levelLength) * 100));
-    ui.innerText = `${progress}% | ATTEMPT ${attempts}`;
+    ui.innerText = `${Math.min(100, Math.floor((distanceTraveled/levelLength)*100))}% | ATTEMPT ${attempts}`;
 
     if (bufferTimer > 0) bufferTimer--;
 
-    // Physics
     if (mode === "cube") {
         player.velY += gravity;
         player.y += player.velY;
@@ -161,12 +143,12 @@ function update() {
         player.velY += isHolding ? -0.85 : 0.85;
         player.y += player.velY;
         player.rotation = player.velY * 2.5;
-        if (player.y > GROUND_Y - player.size || player.y < CEILING_Y) die(progress);
+        if (player.y > GROUND_Y - player.size || player.y < CEILING_Y) die();
     }
 
     if (distanceTraveled >= levelLength) win();
 
-    // Drawing Items
+    // Draw Map
     ctx.fillStyle = "#000"; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height);
     ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 3; ctx.strokeRect(-10, GROUND_Y, canvas.width+20, 2);
 
@@ -174,26 +156,26 @@ function update() {
         let sx = obj.x - distanceTraveled + player.x;
         if (sx < -200 || sx > canvas.width + 200) return;
 
-        if (obj.type === 's') {
+        if (obj.type === 's') { // Spike
             ctx.fillStyle = "#ff2255"; ctx.beginPath(); ctx.moveTo(sx, GROUND_Y); ctx.lineTo(sx+25, GROUND_Y-50); ctx.lineTo(sx+50, GROUND_Y); ctx.fill();
-            if (checkCollision(sx, 50, 50, GROUND_Y)) die(progress);
-        } else if (obj.type === 'o' && obj.active) {
+            if (checkCollision(sx, 50, 50, GROUND_Y)) die();
+        } else if (obj.type === 'o' && obj.active) { // Orb
             ctx.fillStyle = "#ffcc00"; ctx.beginPath(); ctx.arc(sx+25, obj.y+25, 25, 0, Math.PI*2); ctx.fill();
             let dx = (player.x + 24) - (sx + 25); let dy = (player.y + 24) - (obj.y + 25);
-            if (Math.sqrt(dx*dx + dy*dy) < 90 && bufferTimer > 0) { player.velY = -18; bufferTimer = 0; obj.active = false; }
-        } else if (obj.type === 'b') {
+            if (Math.sqrt(dx*dx + dy*dy) < 95 && bufferTimer > 0) { player.velY = -18; bufferTimer = 0; obj.active = false; }
+        } else if (obj.type === 'b') { // Block
             ctx.fillStyle = "#111"; ctx.fillRect(sx, obj.y, 52, 52); ctx.strokeStyle = "#00ffff"; ctx.strokeRect(sx, obj.y, 52, 52);
-            checkBlockCollision(sx, obj.y, progress);
-        } else if (obj.type === 'p') {
+            checkBlockCollision(sx, obj.y);
+        } else if (obj.type === 'p') { // Portal
             ctx.fillStyle = "#00ff00"; ctx.globalAlpha = 0.2; ctx.fillRect(sx, CEILING_Y, 70, GROUND_Y - CEILING_Y); ctx.globalAlpha = 1;
-            if (Math.abs(player.x - sx) < 40 && obj.active) { mode = mode === "cube" ? "ship" : "cube"; obj.active = false; }
-        } else if (obj.type === 'rs') {
+            if (Math.abs(player.x - sx) < 40 && obj.active) { mode = (mode === "cube" ? "ship" : "cube"); obj.active = false; }
+        } else if (obj.type === 'rs') { // Roof Spike
             ctx.fillStyle = "#ff2255"; ctx.beginPath(); ctx.moveTo(sx, CEILING_Y); ctx.lineTo(sx+25, CEILING_Y+50); ctx.lineTo(sx+50, CEILING_Y); ctx.fill();
-            if (player.x + player.size > sx && player.x < sx + 50 && player.y < CEILING_Y + 45) die(progress);
+            if (player.x + player.size > sx && player.x < sx + 50 && player.y < CEILING_Y + 45) die();
         }
     });
 
-    // Draw Jiji
+    // Draw Player
     ctx.save(); ctx.translate(player.x + player.size/2, player.y + player.size/2); ctx.rotate(player.rotation * Math.PI / 180);
     if (playerImg.complete) ctx.drawImage(playerImg, -player.size/2, -player.size/2, player.size, player.size);
     ctx.strokeStyle = "#fff"; ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
@@ -202,13 +184,13 @@ function update() {
     requestAnimationFrame(update);
 }
 
-function checkBlockCollision(bx, by, prog) {
+function checkBlockCollision(bx, by) {
     const p = player;
     if (p.x + p.size > bx + 8 && p.x < bx + 44) {
         if (p.velY >= 0 && p.y + p.size >= by && p.y + p.size <= by + 30) {
             p.y = by - p.size; p.velY = 0; p.onGround = true;
             if (bufferTimer > 0) { p.velY = -18; p.onGround = false; bufferTimer = 0; }
-        } else if (p.y + p.size > by + 10 && p.y < by + 42) die(prog);
+        } else if (p.y + p.size > by + 10 && p.y < by + 42) die();
     }
 }
 
@@ -217,12 +199,8 @@ function checkCollision(ox, ow, oh, oy) {
     return (player.x + player.size - m > ox + m && player.x + m < ox + ow - m && player.y + player.size - m > oy - oh + m);
 }
 
-function die(prog) { 
-    if (prog > highScore) localStorage.setItem('jijiHighScore', prog);
-    isPlaying = false; 
-    setTimeout(() => location.reload(), 200); 
-}
-function win() { isPlaying = false; alert("100%!"); localStorage.setItem('jijiHighScore', 100); location.reload(); }
+function die() { isPlaying = false; setTimeout(() => location.reload(), 200); }
+function win() { isPlaying = false; alert("GG! 100%!"); location.reload(); }
 
 </script>
 </body>
